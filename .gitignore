@@ -1,0 +1,39 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+
+# OS
+.DS_Store
+
+# Build
+.next/
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# Secrets
+*.pem
+gmail-pubsub-key.json
+backend/.env
+
+# PIDs
+backend/.pids/
+
+# Pycache
+**/__pycache__/
