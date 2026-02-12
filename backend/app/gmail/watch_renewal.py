@@ -27,6 +27,9 @@ def renew_gmail_watches_task() -> None:
 
 async def _renew_watches() -> None:
     """Renew watches that expire within 24 hours."""
+    if not settings.gmail_is_configured:
+        logger.debug("Gmail not configured, skipping watch renewal")
+        return
     conn: asyncpg.Connection | None = None
     try:
         conn = await asyncpg.connect(str(settings.postgres_dsn), statement_cache_size=0)

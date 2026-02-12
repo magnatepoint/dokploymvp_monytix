@@ -1,9 +1,17 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from dotenv import load_dotenv
-from pydantic import AnyHttpUrl, Field, PostgresDsn, RedisDsn, ValidationError
+from pydantic import AnyHttpUrl, BeforeValidator, Field, PostgresDsn, RedisDsn, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _ensure_url_scheme(v: str) -> str:
+    """Prepend https:// if value looks like a hostname without scheme."""
+    if isinstance(v, str) and v.strip() and not v.strip().startswith(("http://", "https://")):
+        return f"https://{v.strip()}"
+    return v
 
 APP_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = APP_DIR.parent
@@ -24,12 +32,14 @@ class Settings(BaseSettings):
     supabase_anon_key: str = Field(alias="SUPABASE_ANON_KEY")
     supabase_service_role_key: str = Field(alias="SUPABASE_SERVICE_ROLE_KEY")
     supabase_jwt_secret: str = Field(alias="SUPABASE_JWT_SECRET")
-    frontend_origin: AnyHttpUrl = Field(default="http://localhost:5173", alias="FRONTEND_ORIGIN")
+    frontend_origin: Annotated[AnyHttpUrl, BeforeValidator(_ensure_url_scheme)] = Field(
+        default="http://localhost:5173", alias="FRONTEND_ORIGIN"
+    )
     postgres_dsn: PostgresDsn = Field(alias="POSTGRES_URL")
     redis_url: RedisDsn = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
-    gmail_client_id: str = Field(alias="GMAIL_CLIENT_ID")
-    gmail_client_secret: str = Field(alias="GMAIL_CLIENT_SECRET")
-    gmail_redirect_uri: AnyHttpUrl = Field(alias="GMAIL_REDIRECT_URI")
+    gmail_client_id: str | None = Field(default=None, alias="GMAIL_CLIENT_ID")
+    gmail_client_secret: str | None = Field(default=None, alias="GMAIL_CLIENT_SECRET")
+    gmail_redirect_uri: AnyHttpUrl | None = Field(default=None, alias="GMAIL_REDIRECT_URI")
     gmail_token_uri: AnyHttpUrl = Field(
         default="https://oauth2.googleapis.com/token", alias="GMAIL_TOKEN_URI"
     )
@@ -45,6 +55,13 @@ class Settings(BaseSettings):
     
     # Base directory for models and data
     base_dir: Path = Field(default=BACKEND_DIR, alias="BASE_DIR")
+
+    @property
+    def gmail_is_configured(self) -> bool:
+        """True if Gmail OAuth credentials are set (enables Gmail integration)."""
+        return bool(
+            self.gmail_client_id and self.gmail_client_secret and self.gmail_redirect_uri
+        )
 
     model_config = SettingsConfigDict(
         env_file=".env",

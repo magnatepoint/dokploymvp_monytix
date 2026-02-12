@@ -50,10 +50,19 @@ def get_gmail_service(pool=Depends(get_db_pool)) -> GmailService:
     return GmailService(pool)
 
 
+def _require_gmail_config() -> None:
+    if not settings.gmail_is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Gmail integration is not configured. Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REDIRECT_URI.",
+        )
+
+
 @router.get("/connect")
 async def connect_gmail(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, str]:
+    _require_gmail_config()
     state = _state_token(user.user_id)
     params = {
         "client_id": settings.gmail_client_id,
@@ -75,6 +84,7 @@ async def gmail_oauth_callback(
     state: str = Query(...),
     service: GmailService = Depends(get_gmail_service),
 ):
+    _require_gmail_config()
     user_id = _decode_state(state)
     token_payload = {
         "code": code,

@@ -25,6 +25,9 @@ def sync_gmail_inbox_task(job_id: str) -> None:
 
 
 async def _sync(job_id: str) -> None:
+    if not settings.gmail_is_configured:
+        logger.error("Gmail not configured, cannot sync job %s", job_id)
+        return
     conn: asyncpg.Connection | None = None
     try:
         # Connect with retry logic

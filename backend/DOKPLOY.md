@@ -33,11 +33,12 @@ In the **Environment** tab, add these variables (Dokploy creates a `.env` file):
 | `SUPABASE_URL` | Yes | Supabase project URL |
 | `SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key |
-| `FRONTEND_ORIGIN` | Yes | Frontend URL (e.g. `https://app.yourdomain.com`) for CORS |
+| `SUPABASE_JWT_SECRET` | Yes | Supabase JWT secret (for signing tokens) |
+| `FRONTEND_ORIGIN` | Yes | Frontend URL for CORS. Use full URL: `https://mvp1.monytix.ai` or `https://app.yourdomain.com` (hostname-only values like `mvp1.monytix.ai` are auto-prefixed with `https://`) |
 | `ENVIRONMENT` | No | Default: `production` |
 | `APP_PORT` | No | Host port (default: `8001`) |
 
-Optional: Gmail API, GCP Pub/Sub, etc. See `.env.production.example`.
+**Optional (Gmail integration):** `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REDIRECT_URI`. If omitted, Gmail routes return 503. See `.env.production.example`.
 
 ### 3. Configure Domain (Optional)
 
