@@ -8,8 +8,9 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "${APP_PORT:-8001}:8001"
+    # No host port mapping - Coolify routes via proxy. Add domain in Coolify UI (port 8001).
+    expose:
+      - "8001"
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - POSTGRES_URL=${POSTGRES_URL}
