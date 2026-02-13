@@ -22,6 +22,8 @@ __pycache__/
 .next/
 dist/
 build/
+.nixpacks/
+*.tar/
 
 # Logs
 *.log

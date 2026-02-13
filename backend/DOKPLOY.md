@@ -80,11 +80,26 @@ The compose file runs:
 
 All services use **named volumes** (`backend-logs`, `backend-data`, `redis-data`) so data persists across deployments.
 
+## Nixpacks (Alternative Build)
+
+For platforms that support Nixpacks (Railway, Render, Coolify Application, etc.):
+
+1. Set **Build Type** to **Nixpacks**
+2. Set **Build Path** to `backend/`
+3. `nixpacks.toml` and `.python-version` configure Python 3.11 and the uvicorn start command
+
+```bash
+cd backend
+nixpacks build . -o backend.tar
+```
+
+**Note:** Nixpacks deploys the API only. For Celery + Redis, use Docker Compose.
+
 ## Troubleshooting
 
 ### Build fails
 
-- Ensure `backend/Dockerfile` and `backend/requirements.txt` exist
+- Ensure `backend/Dockerfile` and `backend/requirements.txt` exist (or use Nixpacks)
 - Check build logs for Python dependency errors
 
 ### Backend can't connect to PostgreSQL

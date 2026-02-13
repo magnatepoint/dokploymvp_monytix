@@ -1,0 +1,21 @@
+# Nixpacks configuration for Monytix backend (FastAPI)
+# Use with: nixpacks build . -o backend.tar
+# Or in Dokploy: select Nixpacks build type, set build path to backend/
+
+[phases.setup]
+# System packages: curl for healthcheck, build deps for native Python packages (PyMuPDF, pdfplumber)
+aptPkgs = ["curl", "build-essential", "gcc"]
+
+[phases.install]
+# Python deps from requirements.txt (default)
+# Nixpacks auto-detects and runs: pip install -r requirements.txt
+
+[start]
+# PORT from env (Dokploy, Railway, etc.); default 8001
+cmd = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8001}"
+
+[variables]
+# Ensure Python runs in unbuffered mode
+PYTHONUNBUFFERED = "1"
+# Default port if not set by platform
+PORT = "8001"
