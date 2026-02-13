@@ -123,11 +123,15 @@ def create_app() -> FastAPI:
                 await test_conn.close()
                 
                 # Connection successful, create pool
+                # max_inactive_connection_lifetime: recycle idle conns before Supabase pooler closes them
+                # command_timeout: prevent queries from hanging indefinitely
                 db_pool = await asyncpg.create_pool(
                     str(settings.postgres_dsn),
                     min_size=1,
                     max_size=5,
                     statement_cache_size=0,
+                    command_timeout=60,
+                    max_inactive_connection_lifetime=300,
                 )
                 logger.info("Database connection pool created successfully")
                 break

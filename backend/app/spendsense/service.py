@@ -833,7 +833,8 @@ class SpendSenseService:
             v.bank_code,
             v.channel,
             v.amount,
-            v.direction
+            v.direction,
+            v.confidence
         FROM spendsense.vw_txn_effective v
         LEFT JOIN spendsense.dim_category dc ON dc.category_code = v.category_code
         LEFT JOIN spendsense.dim_subcategory ds ON ds.subcategory_code = v.subcategory_code
@@ -855,6 +856,7 @@ class SpendSenseService:
                     channel=row["channel"],
                     amount=row["amount"],
                     direction=row["direction"],
+                    confidence=float(row["confidence"]) if row.get("confidence") is not None else None,
                 )
                 for row in records
             ],

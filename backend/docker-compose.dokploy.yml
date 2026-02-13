@@ -1,6 +1,7 @@
-# Docker Compose for Dokploy deployment
-# Use this file when deploying to Dokploy. Configure domains via Dokploy UI (Domains tab).
-# Path: backend/docker-compose.dokploy.yml (or docker-compose.yml if you prefer)
+# Docker Compose for Dokploy/Coolify deployment
+# Set env vars in Coolify: Application → Environment Variables
+# Required: POSTGRES_URL, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
+#           SUPABASE_JWT_SECRET, FRONTEND_ORIGIN
 
 services:
   backend:
@@ -20,6 +21,7 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
       - FRONTEND_ORIGIN=${FRONTEND_ORIGIN}
     volumes:
       - backend-logs:/app/logs
@@ -57,7 +59,9 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
       - FRONTEND_ORIGIN=${FRONTEND_ORIGIN}
     volumes:
       - backend-logs:/app/logs
@@ -89,7 +93,9 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
     volumes:
       - backend-logs:/app/logs
       - backend-data:/app/data

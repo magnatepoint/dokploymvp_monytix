@@ -258,7 +258,7 @@ async def _train_category_model() -> dict[str, any]:
         # Train model
         logger.info("Training LogisticRegression model...")
         clf = LogisticRegression(
-            multi_class="multinomial",
+            solver="lbfgs",
             max_iter=500,
             n_jobs=-1,
             random_state=42,

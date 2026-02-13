@@ -42,6 +42,7 @@ class TransactionRecord(BaseModel):
     channel: str | None
     amount: float
     direction: str
+    confidence: float | None = None
 
 
 class TransactionListResponse(BaseModel):

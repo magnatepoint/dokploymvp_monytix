@@ -35,29 +35,49 @@ MODEL_PATH = os.getenv("CATEGORY_MODEL_PATH", "models/category_model.joblib")
 
 async def fetch_training_data(conn: asyncpg.Connection, limit: int = 100_000):
     """
-    Fetch training data from enriched transactions.
+    Fetch training data from enriched transactions and user overrides.
+
+    Uses effective category: user override takes precedence over enriched.
+    Includes both rule-matched (confidence >= 0.7) and user-corrected transactions
+    to improve ML predictions for inferred/unknown merchants.
 
     Returns:
         (texts, amounts, labels) tuples
     """
     query = """
-        SELECT 
-            -- Prioritize merchant name by repeating it (same as prediction logic)
-            CASE 
-                WHEN f.merchant_name_norm IS NOT NULL AND f.merchant_name_norm != '' 
-                THEN f.merchant_name_norm || ' ' || f.merchant_name_norm || ' ' || COALESCE(f.description, '')
-                ELSE COALESCE(f.description, '')
+        WITH effective AS (
+            SELECT
+                f.txn_id,
+                f.merchant_name_norm,
+                f.description,
+                f.amount,
+                COALESCE(ov.category_code, e.category_id) AS category_code,
+                CASE WHEN ov.category_code IS NOT NULL THEN 1.0 ELSE e.confidence END AS eff_confidence
+            FROM spendsense.txn_fact f
+            JOIN spendsense.txn_parsed tp ON tp.fact_txn_id = f.txn_id
+            LEFT JOIN spendsense.txn_enriched e ON e.parsed_id = tp.parsed_id
+            LEFT JOIN LATERAL (
+                SELECT category_code
+                FROM spendsense.txn_override
+                WHERE txn_id = f.txn_id
+                ORDER BY created_at DESC
+                LIMIT 1
+            ) ov ON TRUE
+            WHERE COALESCE(ov.category_code, e.category_id) IS NOT NULL
+              AND (f.description IS NOT NULL AND f.description != ''
+                   OR f.merchant_name_norm IS NOT NULL AND f.merchant_name_norm != '')
+        )
+        SELECT
+            CASE
+                WHEN merchant_name_norm IS NOT NULL AND merchant_name_norm != ''
+                THEN merchant_name_norm || ' ' || merchant_name_norm || ' ' || COALESCE(description, '')
+                ELSE COALESCE(description, '')
             END AS text,
-            f.amount,
-            e.category_id AS category_code
-        FROM spendsense.txn_fact f
-        JOIN spendsense.txn_parsed tp ON tp.fact_txn_id = f.txn_id
-        JOIN spendsense.txn_enriched e ON e.parsed_id = tp.parsed_id
-        WHERE e.category_id IS NOT NULL
-          AND e.confidence >= 0.8
-          AND (f.description IS NOT NULL AND f.description != '' 
-               OR f.merchant_name_norm IS NOT NULL AND f.merchant_name_norm != '')
-        ORDER BY e.created_at DESC
+            amount,
+            category_code
+        FROM effective
+        WHERE eff_confidence >= 0.7
+        ORDER BY eff_confidence DESC
         LIMIT $1
     """
 
@@ -87,7 +107,7 @@ async def main():
         logger.error("POSTGRES_URL not found in environment")
         return
 
-    conn = await asyncpg.connect(postgres_url)
+    conn = await asyncpg.connect(postgres_url, statement_cache_size=0)
 
     try:
         logger.info("Fetching training data...")
@@ -125,7 +145,7 @@ async def main():
         # Train model
         logger.info("Training LogisticRegression model...")
         clf = LogisticRegression(
-            multi_class="multinomial",
+            solver="lbfgs",
             max_iter=500,
             n_jobs=-1,
             random_state=42,

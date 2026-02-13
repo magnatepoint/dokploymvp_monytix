@@ -35,6 +35,7 @@ export interface Transaction {
   channel: string | null
   amount: number
   direction: string
+  confidence?: number | null
 }
 
 export interface TransactionListResponse {

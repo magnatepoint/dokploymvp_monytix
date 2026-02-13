@@ -22,6 +22,7 @@ export default function TransactionsTab({ session }: TransactionsTabProps) {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [searchText, setSearchText] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filters, setFilters] = useState({
     category_code: null as string | null,
     subcategory_code: null as string | null,
@@ -38,6 +39,12 @@ export default function TransactionsTab({ session }: TransactionsTabProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const PAGE_SIZE = 25
 
+  // Debounce search: wait 400ms after last keystroke before triggering API
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchText), 400)
+    return () => clearTimeout(t)
+  }, [searchText])
+
   const loadTransactions = async (append = false) => {
     setLoading(true)
     setError(null)
@@ -46,7 +53,7 @@ export default function TransactionsTab({ session }: TransactionsTabProps) {
       const response = await fetchTransactions(session, {
         limit: PAGE_SIZE,
         offset,
-        search: searchText || undefined,
+        search: debouncedSearch || undefined,
         category_code: filters.category_code || undefined,
         subcategory_code: filters.subcategory_code || undefined,
         channel: filters.channel || undefined,
@@ -72,14 +79,14 @@ export default function TransactionsTab({ session }: TransactionsTabProps) {
   useEffect(() => {
     setPage(1)
     setTransactions([]) // Clear transactions when filters change
-  }, [filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.start_date, filters.end_date, searchText])
+  }, [filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.start_date, filters.end_date, debouncedSearch])
 
   useEffect(() => {
     // If page is 1, replace transactions. If page > 1, append (load more)
     const append = page > 1
     loadTransactions(append)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.access_token, page, searchText, filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.start_date, filters.end_date])
+  }, [session.access_token, page, debouncedSearch, filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.start_date, filters.end_date])
 
   const handleTransactionClick = (transaction: Transaction) => {
     setSelectedTransaction(transaction)
@@ -440,6 +447,14 @@ function TransactionRow({
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${categoryColor.dot}`} />
                 {transaction.category}
+              </span>
+            )}
+            {transaction.confidence != null && transaction.confidence < 0.7 && (
+              <span
+                className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                title="Category may need review"
+              >
+                Review
               </span>
             )}
             {transaction.subcategory && (
