@@ -210,14 +210,14 @@ def parse_pdf_file(data: bytes, filename: str, password: str | None = None) -> l
     buffer = io.BytesIO(data)
     bank_code = infer_bank_code(filename)
 
-    # SBI and Canara table extraction produce poor results. Prefer text-based parsers.
-    if bank_code in ("sbi_bank", "canara_bank"):
+    # SBI, Canara, Axis: table extraction produces poor results. Prefer text-based parsers.
+    if bank_code in ("sbi_bank", "canara_bank", "axis_bank"):
         logger.info("Using line-based parser for %s (bank=%s)", filename, bank_code)
         lines = _extract_lines_with_pdfplumber(buffer, password=password)
         if not lines:
             lines = _extract_lines_with_pymupdf(buffer, password=password)
         if lines:
-            parser_map = {"sbi_bank": "SBI", "canara_bank": "Canara"}
+            parser_map = {"sbi_bank": "SBI", "canara_bank": "Canara", "axis_bank": "Axis"}
             target = parser_map.get(bank_code)
             if target:
                 for bank_name, parser in BANK_PARSERS:

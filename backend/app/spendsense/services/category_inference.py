@@ -160,6 +160,10 @@ def _infer_category_from_keywords(text: str, direction: str) -> str:
     if is_personal_name:
         return "transfers_out" if direction == "debit" else "transfers_in"
     
+    # EMI Principal / EMI Interest → loans_payments (Loan Repayment EMI)
+    if any(k in text_lower for k in ["emi principal", "emi interest"]):
+        return "loans_payments"
+
     # bank interest / fees - check for strong signals
     # Only categorize as banks if there are explicit interest/fee keywords
     # Note: We already checked personal names above, so we don't need to check again

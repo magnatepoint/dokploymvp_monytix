@@ -892,6 +892,13 @@ async def enrich_transactions(
                     subcategory_code = 'pet_vaccine'
                 else:
                     subcategory_code = 'pet_food'  # Default pets subcategory
+            elif category_code == 'loans_payments':
+                # EMI Principal / EMI Interest → Loan Repayment EMI
+                search_text_lower = (merchant_for_inference + " " + description).lower()
+                if any(k in search_text_lower for k in ['emi principal', 'emi interest']):
+                    subcategory_code = 'loan_repayment_emi'
+                else:
+                    subcategory_code = default_subcategories.get(category_code)
             else:
                 # Fallback: use cached default subcategory for this category, or None if not found
                 subcategory_code = default_subcategories.get(category_code)
