@@ -37,7 +37,6 @@ services:
       start_period: 40s
     networks:
       - mvp-network
-      - dokploy-network
     logging:
       driver: "json-file"
       options:
@@ -137,5 +136,3 @@ volumes:
 networks:
   mvp-network:
     driver: bridge
-  dokploy-network:
-    external: true
