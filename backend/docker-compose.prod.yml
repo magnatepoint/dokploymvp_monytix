@@ -36,7 +36,7 @@ services:
         max_attempts: 3
 
   celery-beat:
-    command: celery -A app.celery_app beat --loglevel=warning
+    command: celery -A app.celery_app beat -s /tmp/celerybeat-schedule --loglevel=warning
     deploy:
       resources:
         limits:

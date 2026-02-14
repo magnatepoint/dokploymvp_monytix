@@ -85,7 +85,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: celery -A app.celery_app beat --loglevel=info
+    command: celery -A app.celery_app beat -s /tmp/celerybeat-schedule --loglevel=info
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - POSTGRES_URL=${POSTGRES_URL}

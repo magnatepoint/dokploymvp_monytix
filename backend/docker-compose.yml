@@ -70,7 +70,7 @@ services:
       dockerfile: Dockerfile
     container_name: mvp-celery-beat
     restart: unless-stopped
-    command: celery -A app.celery_app beat --loglevel=info
+    command: celery -A app.celery_app beat -s /tmp/celerybeat-schedule --loglevel=info
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
     env_file:
