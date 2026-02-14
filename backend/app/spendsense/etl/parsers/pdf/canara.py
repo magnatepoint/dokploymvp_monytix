@@ -56,6 +56,8 @@ def parse_canara_pdf(lines: list[str]) -> pd.DataFrame | None:
             return True
         if "INET-IMPS-CR" in upper or "INET-IMPS CR" in upper:
             return True
+        if "NEFT CR" in upper or "NEFT-CR" in upper or "RTGS CR" in upper or "RTGS-CR" in upper:
+            return True
         if "CR/" in upper and "DR/" not in upper[: max(0, upper.find("CR/") - 3)]:
             return True
         return False
