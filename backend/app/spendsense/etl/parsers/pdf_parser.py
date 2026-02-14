@@ -209,15 +209,27 @@ def parse_pdf_file(data: bytes, filename: str, password: str | None = None) -> l
     """Parse PDF bank statement into normalized transaction records."""
     buffer = io.BytesIO(data)
     bank_code = infer_bank_code(filename)
+    lines: list[str] | None = None
 
-    # SBI, Canara, Axis: table extraction produces poor results. Prefer text-based parsers.
-    if bank_code in ("sbi_bank", "canara_bank", "axis_bank"):
-        logger.info("Using line-based parser for %s (bank=%s)", filename, bank_code)
+    # If filename doesn't hint the bank, extract text and infer from content (headers often have bank name)
+    if not bank_code:
         lines = _extract_lines_with_pdfplumber(buffer, password=password)
         if not lines:
             lines = _extract_lines_with_pymupdf(buffer, password=password)
         if lines:
-            parser_map = {"sbi_bank": "SBI", "canara_bank": "Canara", "axis_bank": "Axis"}
+            sample = " ".join(lines[:80])  # Headers/footers usually in first pages
+            bank_code = infer_bank_code(filename, sample_text=sample)
+            buffer.seek(0)
+
+    # SBI, Canara, Axis, Kotak: table extraction produces poor results. Prefer text-based parsers.
+    if bank_code in ("sbi_bank", "canara_bank", "axis_bank", "kotak_bank"):
+        logger.info("Using line-based parser for %s (bank=%s)", filename, bank_code)
+        if not lines:
+            lines = _extract_lines_with_pdfplumber(buffer, password=password)
+        if not lines:
+            lines = _extract_lines_with_pymupdf(buffer, password=password)
+        if lines:
+            parser_map = {"sbi_bank": "SBI", "canara_bank": "Canara", "axis_bank": "Axis", "kotak_bank": "Kotak"}
             target = parser_map.get(bank_code)
             if target:
                 for bank_name, parser in BANK_PARSERS:
@@ -247,12 +259,15 @@ def parse_pdf_file(data: bytes, filename: str, password: str | None = None) -> l
             lines = _extract_lines_with_pymupdf(buffer, password=password)
         if lines:
             logger.info("Extracted %d lines from PDF, trying bank-specific parsers", len(lines))
+            # When filename doesn't hint the bank, infer_bank_code is None. Use parser's bank.
+            _PARSER_TO_CODE = {"Axis": "axis_bank", "SBI": "sbi_bank", "Canara": "canara_bank", "HDFC": "hdfc_bank", "ICICI": "icici_bank", "Kotak": "kotak_bank", "Federal": "federal_bank"}
             for bank_name, parser in BANK_PARSERS:
                 try:
                     df = parser(lines)
                     if df is not None and not df.empty:
                         logger.info("Successfully parsed %s using %s parser", filename, bank_name)
-                        return dataframe_to_records(df, bank_code=bank_code)
+                        effective_bank_code = bank_code or _PARSER_TO_CODE.get(bank_name)
+                        return dataframe_to_records(df, bank_code=effective_bank_code)
                 except Exception as e:
                     logger.debug("%s parser failed: %s", bank_name, e)
                     continue

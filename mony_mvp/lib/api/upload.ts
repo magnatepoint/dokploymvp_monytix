@@ -15,6 +15,26 @@ export interface UploadBatch {
   source_type: string
   status: string
   created_at: string
+  error_message?: string | null
+}
+
+/**
+ * Fetch upload batch status (for polling after upload)
+ */
+export async function fetchBatchStatus(
+  session: Session,
+  batchId: string
+): Promise<UploadBatch> {
+  const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL
+  const url = `${baseUrl}/v1/spendsense/batches/${batchId}`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as { detail?: string })?.detail || res.statusText)
+  }
+  return res.json()
 }
 
 /**

@@ -694,7 +694,8 @@ class SpendSenseService:
     async def get_batch_status(self, batch_id: str, user_id: str) -> UploadBatch | None:
         """Get the current status of an upload batch."""
         query = """
-        SELECT upload_id, user_id, source_type, status, received_at
+        SELECT upload_id, user_id, source_type, status, received_at,
+               (error_json->>'error')::text AS error_message
         FROM spendsense.upload_batch
         WHERE upload_id = $1 AND user_id = $2
         """
@@ -704,9 +705,10 @@ class SpendSenseService:
         return UploadBatch(
             upload_id=str(row["upload_id"]),
             user_id=str(row["user_id"]),
-            source_type=str(row["source_type"]),  # source_type is already a string from DB
+            source_type=str(row["source_type"]),
             status=str(row["status"]),
-            created_at=row["received_at"],  # Map received_at to created_at for the model
+            created_at=row["received_at"],
+            error_message=row["error_message"],
         )
 
     async def list_transactions(
@@ -767,6 +769,11 @@ class SpendSenseService:
             direction_value = kwargs["direction"]
             if direction_value in ("debit", "credit"):
                 add_clause("v.direction = ${idx}", direction_value)
+
+        if kwargs.get("bank_code"):
+            bank_value = kwargs["bank_code"].strip()
+            if bank_value:
+                add_clause("LOWER(v.bank_code) = LOWER(${idx})", bank_value)
 
         where_sql = " AND ".join(where_clauses)
 

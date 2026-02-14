@@ -212,6 +212,7 @@ async def list_transactions(
     subcategory_code: str | None = Query(None),
     channel: str | None = Query(None),
     direction: str | None = Query(None, description="Filter by direction: debit or credit"),
+    bank_code: str | None = Query(None, description="Filter by bank (e.g. hdfc_bank, axis_bank)"),
     start_date: str | None = Query(None, description="Start date in YYYY-MM-DD format"),
     end_date: str | None = Query(None, description="End date in YYYY-MM-DD format"),
     user: AuthenticatedUser = Depends(get_current_user),
@@ -228,6 +229,7 @@ async def list_transactions(
         start_date=start_date,
         end_date=end_date,
         direction=direction,
+        bank_code=bank_code,
     )
     # Calculate page and page_size from limit and offset
     page = (offset // limit) + 1 if limit > 0 else 1

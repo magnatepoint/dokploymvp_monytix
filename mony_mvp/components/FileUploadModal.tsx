@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { uploadStatementFile, isSupportedFileType, isPDFFile } from '@/lib/api/upload'
+import { uploadStatementFile, fetchBatchStatus, isSupportedFileType, isPDFFile } from '@/lib/api/upload'
 import { checkPDFPasswordProtectionSimple } from '@/lib/utils/pdfDetection'
 import { glassCardPrimary, glassFilter } from '@/lib/theme/glass'
 import type { UploadBatch } from '@/lib/api/upload'
@@ -25,9 +25,18 @@ export default function FileUploadModal({
   const [isPasswordProtected, setIsPasswordProtected] = useState(false)
   const [isCheckingPassword, setIsCheckingPassword] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cancelledRef = useRef(false)
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   if (!isOpen) return null
 
@@ -78,6 +87,7 @@ export default function FileUploadModal({
     setIsUploading(true)
     setError(null)
     setUploadProgress(0)
+    cancelledRef.current = false
 
     try {
       const result = await uploadStatementFile(
@@ -91,16 +101,50 @@ export default function FileUploadModal({
 
       // Log success in development
       if (process.env.NODE_ENV === 'development') {
-        console.log('[Upload] Upload completed successfully:', result)
+        console.log('[Upload] Upload completed, polling for parse result:', result)
       }
 
-      // Success - reset and close
-      setSelectedFile(null)
-      setPassword('')
-      setIsPasswordProtected(false)
-      setUploadProgress(0)
-      onUploadComplete?.()
-      onClose()
+      // Upload done; now polling for parse result (allows Close during processing)
+      setIsUploading(false)
+      setIsProcessing(true)
+      const POLL_INTERVAL_MS = 2000
+      const POLL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+      const startTime = Date.now()
+
+      while (true) {
+        if (cancelledRef.current) break
+
+        const batch = await fetchBatchStatus(session, result.upload_id)
+
+        if (cancelledRef.current) break
+
+        if (batch.status === 'loaded') {
+          setSelectedFile(null)
+          setPassword('')
+          setIsPasswordProtected(false)
+          setUploadProgress(0)
+          onUploadComplete?.()
+          onClose()
+          break
+        }
+
+        if (batch.status === 'failed') {
+          const msg = batch.error_message || 'Failed to process the file.'
+          setError(msg)
+          break
+        }
+
+        if (Date.now() - startTime > POLL_TIMEOUT_MS) {
+          setError('Processing timed out. Please check your transactions later.')
+          break
+        }
+
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+      }
+
+      if (cancelledRef.current) {
+        onClose()
+      }
     } catch (err) {
       let errorMessage = 'Upload failed. Please try again.'
       
@@ -124,12 +168,26 @@ export default function FileUploadModal({
       setError(errorMessage)
       console.error('[Upload] Upload error:', err)
     } finally {
-      setIsUploading(false)
+      if (isMountedRef.current) {
+        setIsUploading(false)
+        setIsProcessing(false)
+      }
     }
   }
 
   const handleClose = () => {
-    if (isUploading) return // Don't allow closing during upload
+    if (isUploading) return // Can't cancel mid-upload (XHR in progress)
+    if (isProcessing) {
+      cancelledRef.current = true
+      setSelectedFile(null)
+      setPassword('')
+      setIsPasswordProtected(false)
+      setError(null)
+      setUploadProgress(0)
+      setIsProcessing(false)
+      onClose()
+      return
+    }
     setSelectedFile(null)
     setPassword('')
     setIsPasswordProtected(false)
@@ -197,12 +255,12 @@ export default function FileUploadModal({
             type="file"
             accept=".pdf,.xls,.xlsx,.csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
             onChange={handleFileSelect}
-            disabled={isUploading}
+            disabled={isUploading || isProcessing}
             className="hidden"
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading || isCheckingPassword}
+            disabled={isUploading || isProcessing || isCheckingPassword}
             className={`w-full ${glassFilter} p-6 border-2 border-dashed border-white/20 rounded-lg hover:border-white/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[120px] touch-manipulation`}
             type="button"
           >
@@ -283,7 +341,7 @@ export default function FileUploadModal({
                   ? 'Enter password to unlock PDF'
                   : 'Enter password if PDF is encrypted'
               }
-              disabled={isUploading}
+              disabled={isUploading || isProcessing}
               className={`w-full ${glassFilter} px-4 py-3 rounded-lg text-foreground placeholder-gray-500 disabled:opacity-50`}
             />
             {isPasswordProtected && !password.trim() && (
@@ -299,7 +357,12 @@ export default function FileUploadModal({
           <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-400 font-medium mb-1">Upload Error</p>
             <p className="text-sm text-red-300">{error}</p>
-            {error.toLowerCase().includes('scanned') || error.toLowerCase().includes('image-based') || error.toLowerCase().includes('no tabular data') ? (
+            {error.toLowerCase().includes('password protected') ? (
+              <div className="mt-2 p-2 bg-orange-500/10 border border-orange-500/20 rounded text-xs text-orange-300">
+                <p className="font-medium mb-1">💡 Tip:</p>
+                <p>Enter the PDF password in the field above and try uploading again.</p>
+              </div>
+            ) : (error.toLowerCase().includes('scanned') || error.toLowerCase().includes('image-based') || error.toLowerCase().includes('no tabular data')) ? (
               <div className="mt-2 p-2 bg-orange-500/10 border border-orange-500/20 rounded text-xs text-orange-300">
                 <p className="font-medium mb-1">💡 Tip:</p>
                 <p>This PDF appears to be scanned or image-based. We can only process PDFs with extractable text. Try:</p>
@@ -313,17 +376,21 @@ export default function FileUploadModal({
           </div>
         )}
 
-        {/* Upload Progress */}
-        {isUploading && (
+        {/* Upload / Processing Progress */}
+        {(isUploading || isProcessing) && (
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">Uploading...</span>
-              <span className="text-sm text-gray-400">{Math.round(uploadProgress)}%</span>
+              <span className="text-sm text-gray-400">
+                {isUploading ? 'Uploading...' : 'Processing statement...'}
+              </span>
+              {isUploading && (
+                <span className="text-sm text-gray-400">{Math.round(uploadProgress)}%</span>
+              )}
             </div>
             <div className="w-full bg-gray-700/50 rounded-full h-2 overflow-hidden">
               <div
-                className="bg-[#D4AF37] h-2 transition-all duration-300"
-                style={{ width: `${uploadProgress}%` }}
+                className={`h-2 transition-all duration-300 ${isProcessing ? 'bg-[#D4AF37] animate-pulse' : 'bg-[#D4AF37]'}`}
+                style={{ width: isProcessing ? '100%' : `${uploadProgress}%` }}
               />
             </div>
           </div>
@@ -336,9 +403,9 @@ export default function FileUploadModal({
             disabled={isUploading}
             className="flex-1 px-4 py-3 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Cancel
+            {isProcessing ? 'Close' : 'Cancel'}
           </button>
-          {error && !isUploading && (
+          {error && !isUploading && !isProcessing && (
             <button
               onClick={handleUpload}
               disabled={!selectedFile || isCheckingPassword}
@@ -349,10 +416,10 @@ export default function FileUploadModal({
           )}
           <button
             onClick={handleUpload}
-            disabled={!selectedFile || isUploading || isCheckingPassword}
+            disabled={!selectedFile || isUploading || isProcessing || isCheckingPassword}
             className="flex-1 px-4 py-3 rounded-lg bg-[#D4AF37] text-black font-medium hover:bg-[#D4AF37]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isUploading ? 'Uploading...' : 'Upload'}
+            {isUploading ? 'Uploading...' : isProcessing ? 'Processing...' : 'Upload'}
           </button>
         </div>
       </div>

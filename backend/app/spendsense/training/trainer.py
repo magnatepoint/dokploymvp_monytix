@@ -500,7 +500,7 @@ async def apply_merchant_feedback(conn: asyncpg.Connection) -> dict[str, Any]:
         channel_override = row["corrected_channel"] or row["original_channel"]
         await conn.execute(
             """
-            INSERT INTO spendsense.merchant_alias (
+            INSERT INTO spendsense.ml_merchant_alias (
                 user_id,
                 merchant_hash,
                 alias_pattern,
@@ -510,9 +510,9 @@ async def apply_merchant_feedback(conn: asyncpg.Connection) -> dict[str, Any]:
             )
             VALUES ($1, $2, COALESCE($3, $4), $4, $5, 1)
             ON CONFLICT (user_id, merchant_hash) DO UPDATE
-            SET normalized_name = COALESCE(EXCLUDED.normalized_name, spendsense.merchant_alias.normalized_name),
-                channel_override = COALESCE(EXCLUDED.channel_override, spendsense.merchant_alias.channel_override),
-                usage_count = spendsense.merchant_alias.usage_count + 1,
+            SET normalized_name = COALESCE(EXCLUDED.normalized_name, spendsense.ml_merchant_alias.normalized_name),
+                channel_override = COALESCE(EXCLUDED.channel_override, spendsense.ml_merchant_alias.channel_override),
+                usage_count = spendsense.ml_merchant_alias.usage_count + 1,
                 updated_at = NOW()
             """,
             row["user_id"],

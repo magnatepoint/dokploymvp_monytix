@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { fetchCategories, fetchSubcategories } from '@/lib/api/spendsense'
+import { fetchAccounts } from '@/lib/api/console'
 import type { Category, Subcategory } from '@/types/spendsense'
+import type { Account } from '@/types/console'
 import { glassFilter, glassCardPrimary } from '@/lib/theme/glass'
 
 interface Filters {
@@ -11,6 +13,7 @@ interface Filters {
   subcategory_code: string | null
   channel: string | null
   direction: 'debit' | 'credit' | null
+  bank_code: string | null
   start_date: string | null
   end_date: string | null
 }
@@ -28,15 +31,27 @@ export default function TransactionFilters({
 }: TransactionFiltersProps) {
   const [categories, setCategories] = useState<Category[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showSubcategoryModal, setShowSubcategoryModal] = useState(false)
   const [showChannelModal, setShowChannelModal] = useState(false)
   const [showDirectionModal, setShowDirectionModal] = useState(false)
+  const [showBankModal, setShowBankModal] = useState(false)
   const [showDateModal, setShowDateModal] = useState(false)
 
   useEffect(() => {
     loadCategories()
+    loadAccounts()
   }, [])
+
+  const loadAccounts = async () => {
+    try {
+      const list = await fetchAccounts(session)
+      setAccounts(list)
+    } catch (err) {
+      console.error('Failed to load accounts:', err)
+    }
+  }
 
   useEffect(() => {
     if (filters.category_code) {
@@ -90,6 +105,7 @@ export default function TransactionFilters({
       subcategory_code: null,
       channel: null,
       direction: null,
+      bank_code: null,
       start_date: null,
       end_date: null,
     })
@@ -100,8 +116,15 @@ export default function TransactionFilters({
     filters.subcategory_code ||
     filters.channel ||
     filters.direction ||
+    filters.bank_code ||
     filters.start_date ||
     filters.end_date
+
+  // Unique banks from accounts (by bank_code)
+  const banks = Array.from(
+    new Map(accounts.map((a) => [a.bank_code, { bank_code: a.bank_code, bank_name: a.bank_name }])).values()
+  ).sort((a, b) => a.bank_name.localeCompare(b.bank_name))
+  const selectedBank = banks.find((b) => b.bank_code === filters.bank_code)
 
   const selectedCategory = categories.find((c) => c.category_code === filters.category_code)
   const selectedSubcategory = subcategories.find((s) => s.subcategory_code === filters.subcategory_code)
@@ -190,6 +213,14 @@ export default function TransactionFilters({
             isActive={!!filters.direction}
             onClick={() => setShowDirectionModal(true)}
             onClear={() => clearFilter('direction')}
+          />
+
+          {/* Bank Filter */}
+          <FilterChip
+            label={selectedBank ? selectedBank.bank_name : 'Bank'}
+            isActive={!!filters.bank_code}
+            onClick={() => setShowBankModal(true)}
+            onClear={() => clearFilter('bank_code')}
           />
 
           {/* Date Range Filter */}
@@ -401,6 +432,51 @@ export default function TransactionFilters({
             >
               Credit (Income)
             </button>
+          </div>
+        </FilterModal>
+      )}
+
+      {/* Bank Modal */}
+      {showBankModal && (
+        <FilterModal
+          title="Select Bank"
+          onClose={() => setShowBankModal(false)}
+          onSelect={(value) => {
+            updateFilter('bank_code', value)
+            setShowBankModal(false)
+          }}
+          selectedValue={filters.bank_code}
+        >
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            <button
+              onClick={() => {
+                updateFilter('bank_code', null)
+                setShowBankModal(false)
+              }}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
+                !filters.bank_code
+                  ? 'bg-[#D4AF37]/20 border border-[#D4AF37]/30'
+                  : 'bg-white/5 border border-white/10 hover:bg-white/10'
+              }`}
+            >
+              All Banks
+            </button>
+            {banks.map((bank) => (
+              <button
+                key={bank.bank_code}
+                onClick={() => {
+                  updateFilter('bank_code', bank.bank_code)
+                  setShowBankModal(false)
+                }}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
+                  filters.bank_code === bank.bank_code
+                    ? 'bg-[#D4AF37]/20 border border-[#D4AF37]/30'
+                    : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                }`}
+              >
+                {bank.bank_name}
+              </button>
+            ))}
           </div>
         </FilterModal>
       )}

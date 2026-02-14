@@ -105,9 +105,9 @@ async def persist_records_async(
                 ma_global.normalized_name AS global_alias_name,
                 ma_global.channel_override AS global_alias_channel
             FROM norm n
-            LEFT JOIN spendsense.merchant_alias ma_user
+            LEFT JOIN spendsense.ml_merchant_alias ma_user
                 ON ma_user.user_id = n.user_id AND ma_user.merchant_hash = n.m_hash
-            LEFT JOIN spendsense.merchant_alias ma_global
+            LEFT JOIN spendsense.ml_merchant_alias ma_global
                 ON ma_global.user_id IS NULL AND ma_global.merchant_hash = n.m_hash
         ),
         m_match AS (

@@ -7,69 +7,75 @@ from typing import Any
 
 import pandas as pd  # type: ignore[import-untyped]
 
+# Format: DD-MM-YYYY <narration> <ref> amount(Dr/Cr) balance(Cr)
+# Can span multiple lines when narration wraps (e.g. "Recd:IMPS/.../KKBK\n/X5508/20240\nIMPS-...")
+_AMOUNT_BALANCE_RE = re.compile(
+    r"([\d,.]+)\((Cr|Dr)\)\s+([\d,.]+)\((Cr|Dr)\)\s*$",
+    re.IGNORECASE,
+)
+_DATE_START_RE = re.compile(r"^(\d{2}-\d{2}-\d{4})\s+")
+
 
 def parse_kotak_pdf(lines: list[str]) -> pd.DataFrame | None:
-    """Parse Kotak bank PDF statements."""
+    """Parse Kotak bank PDF statements.
+
+    Format: DD-MM-YYYY <narration> <ref> amount(Dr/Cr) balance(Cr)
+    Bank identified by 'kotak' or 'kkbk' (IFSC) in content.
+    """
     if not lines:
         return None
 
-    if not any("kotak" in line.lower() for line in lines):
+    haystack = " ".join(line.lower() for line in lines[:50])
+    if "kotak" not in haystack and "kkbk" not in haystack:
         return None
 
-    date_regex = re.compile(r"^(\d{2}-\d{2}-\d{4})$")
-    amount_regex = re.compile(r"([\d,.]+)\((Cr|Dr)\)", re.IGNORECASE)
     parsed_rows: list[dict[str, Any]] = []
     i = 0
 
     while i < len(lines):
         line = lines[i]
-        date_match = date_regex.match(line)
+        date_match = _DATE_START_RE.match(line)
         if not date_match:
             i += 1
             continue
 
         txn_date = date_match.group(1)
+        # Collect lines until we find amount(Dr/Cr) balance(Cr) at end
+        block_lines = [line]
         i += 1
-        narration_parts: list[str] = []
 
-        amount_line = None
         while i < len(lines):
-            candidate = lines[i]
-            if amount_regex.search(candidate):
-                amount_line = candidate
+            next_line = lines[i]
+            # Stop if next line starts with a date (new transaction)
+            if _DATE_START_RE.match(next_line):
                 break
-            if date_regex.match(candidate):
+            block_lines.append(next_line)
+            i += 1
+            # Check if this block now ends with amount balance
+            block = " ".join(block_lines)
+            if _AMOUNT_BALANCE_RE.search(block):
                 break
-            narration_parts.append(candidate)
-            i += 1
 
-        if amount_line is None or i >= len(lines):
+        block = " ".join(block_lines)
+        match = _AMOUNT_BALANCE_RE.search(block)
+        if not match:
             continue
 
-        amount_match = amount_regex.search(amount_line)
-        balance_line_index = i + 1
-        if not amount_match or balance_line_index >= len(lines):
-            i += 1
-            continue
-
-        balance_line = lines[balance_line_index]
-        balance_match = amount_regex.search(balance_line)
-        if not balance_match:
-            i += 1
-            continue
-
-        description = " ".join(part.strip() for part in narration_parts if part.strip())
-        amount_val = amount_match.group(1).replace(",", "")
-        balance_val = balance_match.group(1).replace(",", "")
+        amount_val = match.group(1).replace(",", "")
+        amount_dir = match.group(2).lower()
+        balance_val = match.group(3).replace(",", "")
+        balance_dir = match.group(4).lower()
         try:
             amount_float = float(amount_val)
             balance_float = float(balance_val)
         except ValueError:
-            i += 1
             continue
 
-        amount_dir = amount_match.group(2).lower()
-        balance_dir = balance_match.group(2).lower()
+        # Narration is everything between date and the first amount
+        rest = block[: match.start()].strip()
+        # Remove the date from start
+        rest = _DATE_START_RE.sub("", rest, count=1).strip()
+        description = rest if rest else "Transaction"
 
         row: dict[str, Any] = {
             "txn_date": txn_date,
@@ -78,14 +84,12 @@ def parse_kotak_pdf(lines: list[str]) -> pd.DataFrame | None:
             "deposit_amt": None,
             "balance": balance_float if balance_dir == "cr" else -balance_float,
         }
-
         if amount_dir == "dr":
             row["withdrawal_amt"] = amount_float
         else:
             row["deposit_amt"] = amount_float
 
         parsed_rows.append(row)
-        i = balance_line_index + 1
 
     if not parsed_rows:
         return None

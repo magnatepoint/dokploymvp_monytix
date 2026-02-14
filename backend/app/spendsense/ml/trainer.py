@@ -5,6 +5,7 @@ import json
 import logging
 import pickle
 from pathlib import Path
+from collections import Counter
 from typing import Any
 
 import asyncpg
@@ -101,9 +102,11 @@ class CategoryPredictor:
         # Train category model
         self.category_encoder = LabelEncoder()
         y_category = self.category_encoder.fit_transform(categories)
-        
+        # Stratify only when all classes have >= 2 samples (required by sklearn)
+        stratify_cat = y_category if min(Counter(y_category).values()) >= 2 else None
+
         X_train_cat, X_test_cat, y_train_cat, y_test_cat = train_test_split(
-            X, y_category, test_size=0.2, random_state=42, stratify=y_category
+            X, y_category, test_size=0.2, random_state=42, stratify=stratify_cat
         )
         
         self.category_model = RandomForestClassifier(
@@ -126,9 +129,10 @@ class CategoryPredictor:
             
             self.subcategory_encoder = LabelEncoder()
             y_subcategory = self.subcategory_encoder.fit_transform(list(subcat_labels))
-            
+            stratify_sub = y_subcategory if min(Counter(y_subcategory).values()) >= 2 else None
+
             X_train_sub, X_test_sub, y_train_sub, y_test_sub = train_test_split(
-                X_subcat, y_subcategory, test_size=0.2, random_state=42, stratify=y_subcategory
+                X_subcat, y_subcategory, test_size=0.2, random_state=42, stratify=stratify_sub
             )
             
             self.subcategory_model = RandomForestClassifier(
@@ -359,7 +363,7 @@ async def train_ml_model(
 
 
 async def apply_merchant_feedback(conn: asyncpg.Connection) -> dict[str, Any]:
-    """Persist merchant/channel edits into merchant_alias table."""
+    """Persist merchant/channel edits into ml_merchant_alias table."""
     rows = await conn.fetch(
         """
         SELECT feedback_id,
@@ -396,7 +400,7 @@ async def apply_merchant_feedback(conn: asyncpg.Connection) -> dict[str, Any]:
 
         await conn.execute(
             """
-            INSERT INTO spendsense.merchant_alias (
+            INSERT INTO spendsense.ml_merchant_alias (
                 user_id,
                 merchant_hash,
                 alias_pattern,
@@ -406,9 +410,9 @@ async def apply_merchant_feedback(conn: asyncpg.Connection) -> dict[str, Any]:
             )
             VALUES ($1, $2, COALESCE($3, $4), $4, $5, 1)
             ON CONFLICT (user_id, merchant_hash) DO UPDATE
-            SET normalized_name = COALESCE(EXCLUDED.normalized_name, spendsense.merchant_alias.normalized_name),
-                channel_override = COALESCE(EXCLUDED.channel_override, spendsense.merchant_alias.channel_override),
-                usage_count = spendsense.merchant_alias.usage_count + 1,
+            SET normalized_name = COALESCE(EXCLUDED.normalized_name, spendsense.ml_merchant_alias.normalized_name),
+                channel_override = COALESCE(EXCLUDED.channel_override, spendsense.ml_merchant_alias.channel_override),
+                usage_count = spendsense.ml_merchant_alias.usage_count + 1,
                 updated_at = NOW()
             """,
             row["user_id"],

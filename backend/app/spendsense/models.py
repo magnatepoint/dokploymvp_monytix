@@ -30,6 +30,7 @@ class UploadBatch(BaseModel):
     account_ref: str | None = None
     status: str
     created_at: datetime
+    error_message: str | None = None  # From error_json when status=failed
 
 
 class TransactionRecord(BaseModel):

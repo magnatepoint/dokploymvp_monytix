@@ -28,6 +28,7 @@ export default function TransactionsTab({ session }: TransactionsTabProps) {
     subcategory_code: null as string | null,
     channel: null as string | null,
     direction: null as 'debit' | 'credit' | null,
+    bank_code: null as string | null,
     start_date: null as string | null,
     end_date: null as string | null,
   })
@@ -58,6 +59,7 @@ export default function TransactionsTab({ session }: TransactionsTabProps) {
         subcategory_code: filters.subcategory_code || undefined,
         channel: filters.channel || undefined,
         direction: filters.direction || undefined,
+        bank_code: filters.bank_code || undefined,
         start_date: filters.start_date || undefined,
         end_date: filters.end_date || undefined,
       })
@@ -79,14 +81,14 @@ export default function TransactionsTab({ session }: TransactionsTabProps) {
   useEffect(() => {
     setPage(1)
     setTransactions([]) // Clear transactions when filters change
-  }, [filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.start_date, filters.end_date, debouncedSearch])
+  }, [filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.bank_code, filters.start_date, filters.end_date, debouncedSearch])
 
   useEffect(() => {
     // If page is 1, replace transactions. If page > 1, append (load more)
     const append = page > 1
     loadTransactions(append)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.access_token, page, debouncedSearch, filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.start_date, filters.end_date])
+  }, [session.access_token, page, debouncedSearch, filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.bank_code, filters.start_date, filters.end_date])
 
   const handleTransactionClick = (transaction: Transaction) => {
     setSelectedTransaction(transaction)
@@ -322,6 +324,7 @@ export default function TransactionsTab({ session }: TransactionsTabProps) {
             subcategory_code: null,
             channel: null,
             direction: null,
+            bank_code: null,
             start_date: null,
             end_date: null,
           })

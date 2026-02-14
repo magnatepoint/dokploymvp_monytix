@@ -1,21 +1,99 @@
-"""HDFC Bank PDF statement line-based parser."""
+"""HDFC Bank PDF statement line-based parser.
+
+Supports:
+1. Single-line format: DD/MM/YY Narration Ref DD/MM/YY Withdrawal ClosingBalance
+   e.g. 01/04/25 BHDFU4F0H84OGQ/BILLDKHDFCCARD 0000259180488742 01/04/25 140,000.00 102,853.67
+2. Multi-line format: date on own line, then narration/ref/amounts on following lines
+"""
 
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 import pandas as pd  # type: ignore[import-untyped]
 
+# Single-line: Date Narration Ref ValueDt Amt1 Amt2 (Amt1=withdrawal or deposit, Amt2=closing)
+_HDFC_SINGLE_LINE = re.compile(
+    r"^(\d{2}/\d{2}/\d{2})\s+(.+)\s+(\d{2}/\d{2}/\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$"
+)
+
+
+def _parse_hdfc_date(s: str) -> datetime | None:
+    """Parse DD/MM/YY format."""
+    m = re.match(r"^(\d{2})/(\d{2})/(\d{2})\s*$", s.strip())
+    if not m:
+        return None
+    try:
+        yy = int(m.group(3))
+        year = 2000 + yy if yy < 50 else 1900 + yy
+        return datetime(year, int(m.group(2)), int(m.group(1)))
+    except ValueError:
+        return None
+
+
+def _parse_hdfc_single_line_format(lines: list[str]) -> pd.DataFrame | None:
+    """Parse HDFC statements where each transaction is on one line."""
+    parsed_rows: list[dict[str, Any]] = []
+    prev_balance: float | None = None
+
+    skip = {"date narration chq./ref.no.", "statementof account", "hdfc bank limited"}
+
+    for line in lines:
+        line_stripped = line.strip()
+        if not line_stripped or len(line_stripped) < 30:
+            continue
+        if any(s in line_stripped.lower().replace(" ", "") for s in skip):
+            continue
+
+        m = _HDFC_SINGLE_LINE.match(line_stripped)
+        if not m:
+            continue
+
+        date_str, narration_ref, value_dt, amt1_str, amt2_str = m.groups()
+        dt = _parse_hdfc_date(date_str)
+        if not dt:
+            continue
+        try:
+            amt1 = float(amt1_str.replace(",", ""))
+            amt2 = float(amt2_str.replace(",", ""))
+        except ValueError:
+            continue
+
+        # amt1 = withdrawal or deposit, amt2 = closing balance
+        closing = amt2
+        if prev_balance is not None:
+            is_credit = closing > prev_balance
+        else:
+            is_credit = False
+
+        parsed_rows.append({
+            "txn_date": dt.date(),
+            "description": narration_ref.strip(),
+            "withdrawal_amt": None if is_credit else amt1,
+            "deposit_amt": amt1 if is_credit else None,
+        })
+        prev_balance = closing
+
+    return pd.DataFrame(parsed_rows) if parsed_rows else None
+
 
 def parse_hdfc_pdf(lines: list[str]) -> pd.DataFrame | None:
-    """Parse HDFC bank PDF statements with vertical transaction format."""
+    """Parse HDFC bank PDF statements (single-line or vertical format)."""
     if not lines:
         return None
 
-    if not any("hdfc" in line.lower() for line in lines[:50]):
+    haystack = " ".join(lines[:80]).lower()
+    if "hdfc" not in haystack:
         return None
 
+    # Try single-line format first (Date Narration Ref ValueDt Amt Amt)
+    df = _parse_hdfc_single_line_format(lines)
+    if df is not None and not df.empty:
+        return df
+
+    # Fall back to vertical format
     date_regex = re.compile(r"^(\d{2}/\d{2}/\d{2})$")
     amount_regex = re.compile(r"([\d,]+\.?\d*)")
     parsed_rows: list[dict[str, Any]] = []

@@ -40,6 +40,7 @@ export async function fetchTransactions(
     subcategory_code?: string
     channel?: string
     direction?: 'debit' | 'credit'
+    bank_code?: string
     start_date?: string
     end_date?: string
   }
@@ -52,6 +53,7 @@ export async function fetchTransactions(
   if (options?.subcategory_code) params.append('subcategory_code', options.subcategory_code)
   if (options?.channel) params.append('channel', options.channel)
   if (options?.direction) params.append('direction', options.direction)
+  if (options?.bank_code) params.append('bank_code', options.bank_code)
   if (options?.start_date) params.append('start_date', options.start_date)
   if (options?.end_date) params.append('end_date', options.end_date)
 
