@@ -13,9 +13,11 @@ from .models import (
     SpendSenseKPI,
     StagingRecord,
     TransactionCreate,
+    TransactionCreateResponse,
     TransactionListResponse,
     TransactionRecord,
     TransactionUpdate,
+    UpdatedGoalItem,
     UploadBatch,
     UploadBatchCreate,
     CategoryResponse,
@@ -173,7 +175,7 @@ async def get_batch_status(
 
 @router.post(
     "/transactions",
-    response_model=TransactionRecord,
+    response_model=TransactionCreateResponse,
     summary="Create manual transaction",
     status_code=201,
 )
@@ -181,8 +183,9 @@ async def create_transaction(
     data: TransactionCreate,
     user: AuthenticatedUser = Depends(get_current_user),
     service: SpendSenseService = Depends(get_service),
-) -> TransactionRecord:
-    """Create a manual transaction."""
+    pool: Pool = Depends(get_db_pool),
+) -> TransactionCreateResponse:
+    """Create a manual transaction. Returns transaction + affected goals for UI feedback."""
     import logging
     logger = logging.getLogger(__name__)
     
@@ -190,7 +193,30 @@ async def create_transaction(
         logger.info(f"Creating manual transaction for user {user.user_id}: merchant={data.merchant_name}, amount={data.amount}, direction={data.direction}")
         result = await service.create_manual_transaction(user.user_id, data)
         logger.info(f"Successfully created transaction {result.txn_id} for user {user.user_id}")
-        return result
+
+        # Process for goal updates and get affected goals
+        updated_goals: list[UpdatedGoalItem] = []
+        try:
+            from app.goals.transaction_hook import process_transaction_for_goals_by_id
+            async with pool.acquire() as conn:
+                affected = await process_transaction_for_goals_by_id(conn, user.user_id, result.txn_id)
+                updated_goals = [UpdatedGoalItem(**a) for a in affected]
+        except Exception as e:
+            logger.warning(f"Goal processing for txn {result.txn_id} failed (non-fatal): {e}")
+
+        return TransactionCreateResponse(
+            txn_id=result.txn_id,
+            txn_date=result.txn_date,
+            merchant=result.merchant,
+            category=result.category,
+            subcategory=result.subcategory,
+            bank_code=result.bank_code,
+            channel=result.channel,
+            amount=result.amount,
+            direction=result.direction,
+            confidence=None,
+            updated_goals=updated_goals,
+        )
     except ValueError as exc:
         logger.warning(f"Validation error creating transaction for user {user.user_id}: {exc}")
         raise HTTPException(status_code=400, detail=str(exc)) from exc

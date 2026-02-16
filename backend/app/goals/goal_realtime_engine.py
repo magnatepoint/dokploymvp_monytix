@@ -34,9 +34,11 @@ class TransactionView:
     txn_date: date
     amount: float
     direction: str  # 'debit' or 'credit'
-    category: str | None  # high-level category from enriched
+    category: str | None  # high-level for linked_txn_type match (needs/wants/assets)
     subcategory: str | None
     merchant_name: str | None
+    category_code: str | None = None  # raw from vw_txn_effective for linked_category match
+    subcategory_code: str | None = None  # raw for linked_subcategory match
 
 
 class GoalRealtimeEngine:
@@ -61,23 +63,25 @@ class GoalRealtimeEngine:
         user_id: UUID,
         txn: TransactionView,
         context: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         """
         Main entry: call this after a transaction is created + categorized.
+        Returns list of affected goals: [{goal_id, goal_name, delta, prev_pct, new_pct, reason}]
         """
         if not context:
             # Try to get context from database
             context = await self._get_life_context(user_id)
             if not context:
                 logger.debug(f"No life context found for user {user_id}, skipping goal processing")
-                return
+                return []
 
         # 1) Find goals linked to this transaction category/subcategory
         goals = await self.goals_repo.list_goals(user_id)
         linked_goals = self._filter_linked_goals(goals, txn)
 
+        affected: list[dict[str, Any]] = []
         if linked_goals:
-            await self._apply_txn_to_goals(linked_goals, txn)
+            affected = await self._apply_txn_to_goals(linked_goals, txn)
 
         # 2) Rebuild plan and update drift metrics
         await self._recalculate_plan_and_drift(user_id, context, goals)
@@ -103,28 +107,47 @@ class GoalRealtimeEngine:
                     exc_info=True,
                 )
 
+        return affected
+
     def _filter_linked_goals(
         self,
         goals: list[dict[str, Any]],
         txn: TransactionView,
     ) -> list[dict[str, Any]]:
         """
-        Basic rules:
-        - If goal.linked_txn_type matches txn.category → link
-        - Optionally refine by subcategory later
+        Match rules (v1):
+        1. If goal has linked_category_code + linked_subcategory_code: exact match required
+        2. Else: linked_txn_type matches txn.category (needs/wants/assets)
         """
-        if not txn.category:
-            return []
-
         linked: list[dict[str, Any]] = []
         for g in goals:
-            linked_txn_type = g.get("linked_txn_type")
-            if not linked_txn_type:
+            lcat = (g.get("linked_category_code") or "").strip().lower()
+            lsub = (g.get("linked_subcategory_code") or "").strip().lower()
+            ldir = (g.get("linked_direction") or "").strip().lower()
+            lmin = g.get("linked_min_amount")
+
+            # Rule 1: Explicit category+subcategory match (deterministic)
+            if lcat and lsub:
+                txn_cat = (txn.category_code or "").strip().lower()
+                txn_sub = (txn.subcategory_code or "").strip().lower()
+                if txn_cat != lcat or txn_sub != lsub:
+                    continue
+                if ldir and txn.direction.lower() != ldir:
+                    continue
+                if lmin is not None and abs(txn.amount) < float(lmin):
+                    continue
+                linked.append(g)
                 continue
 
-            # Simple: match category; you can make this richer
-            if linked_txn_type.lower() == txn.category.lower():
-                linked.append(g)
+            # Rule 2: linked_txn_type match (legacy)
+            linked_txn_type = g.get("linked_txn_type")
+            if linked_txn_type and txn.category:
+                if linked_txn_type.lower() == txn.category.lower():
+                    if ldir and txn.direction.lower() != ldir:
+                        continue
+                    if lmin is not None and abs(txn.amount) < float(lmin):
+                        continue
+                    linked.append(g)
 
         return linked
 
@@ -132,37 +155,59 @@ class GoalRealtimeEngine:
         self,
         goals: list[dict[str, Any]],
         txn: TransactionView,
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         """
         Update goal current_savings / remaining_amount based on txn.
-        Direction 'credit' assumed as contribution towards goal category.
+        Returns list of affected goals with prev/new progress for UI feedback.
         """
+        affected: list[dict[str, Any]] = []
         for g in goals:
             goal_id = UUID(str(g["goal_id"]))
             current_savings = float(g.get("current_savings") or 0.0)
+            estimated_cost = float(g.get("estimated_cost") or 0.0)
+            goal_category = (g.get("goal_category") or "").lower()
+            goal_name = (g.get("goal_name") or "").lower()
 
-            if txn.direction == "credit":
-                # Treat as contribution/top-up to goal
+            # Credits = contribution. Debits = debt paydown (for Debt/Credit Card goals)
+            is_debt_goal = "debt" in goal_category or "credit" in goal_name or "paydown" in goal_name
+            contributes = (
+                txn.direction == "credit"
+                or (txn.direction == "debit" and is_debt_goal)
+            )
+
+            if contributes:
                 new_savings = current_savings + txn.amount
+                prev_pct = GoalPlanner.compute_progress_pct({**g, "current_savings": current_savings})
+                new_pct = GoalPlanner.compute_progress_pct({**g, "current_savings": new_savings}) if estimated_cost > 0 else 0.0
+                reason = "debit_paydown" if (txn.direction == "debit" and is_debt_goal) else "linked_txn_type"
+
                 updates = {
                     "current_savings": new_savings,
                 }
-                # Add drift fields if they exist
                 try:
                     updates["last_contribution_at"] = datetime.combine(txn.txn_date, datetime.min.time())
                     updates["last_txn_id"] = txn.id
                 except Exception:
-                    pass  # Fields might not exist yet
-                
+                    pass
+
                 await self.goals_repo.update_goal(
                     user_id=txn.user_id,
                     goal_id=goal_id,
                     updates=updates,
                 )
+                affected.append({
+                    "goal_id": str(goal_id),
+                    "goal_name": g.get("goal_name", ""),
+                    "delta": txn.amount,
+                    "prev_pct": round(prev_pct, 1),
+                    "new_pct": round(new_pct, 1),
+                    "reason": reason,
+                })
                 logger.debug(
                     f"Updated goal {goal_id} savings: {current_savings} -> {new_savings} "
                     f"from txn {txn.id}"
                 )
+        return affected
 
     async def _recalculate_plan_and_drift(
         self,

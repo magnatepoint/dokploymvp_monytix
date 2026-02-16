@@ -1,0 +1,677 @@
+package com.example.monytix.goaltracker
+
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.monytix.data.GoalProgressItem
+import com.example.monytix.data.GoalResponse
+import com.example.monytix.ui.theme.AccentPrimary
+import com.example.monytix.ui.theme.BannerPurple
+import com.example.monytix.ui.theme.ChartOrange
+import com.example.monytix.ui.theme.ChartPurple
+import com.example.monytix.ui.theme.GlassCard
+import com.example.monytix.ui.theme.Success
+import java.util.concurrent.TimeUnit
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GoalTrackerScreen(
+    viewModel: GoalTrackerViewModel = viewModel(),
+    modifier: Modifier = Modifier
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    var selectedTab by remember { mutableStateOf(GtTab.OVERVIEW) }
+    val colorScheme = MaterialTheme.colorScheme
+
+    Scaffold(
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text("GoalTracker", color = colorScheme.onBackground) },
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = colorScheme.background,
+                    titleContentColor = colorScheme.onBackground
+                ),
+                actions = {
+                    IconButton(onClick = { viewModel.refresh() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = colorScheme.onBackground)
+                    }
+                }
+            )
+        },
+        containerColor = colorScheme.background
+    ) { innerPadding ->
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            WelcomeBanner(username = uiState.userEmail)
+            if (uiState.lastSyncTime > 0) {
+                val mins = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis() - uiState.lastSyncTime)
+                val syncLabel = when {
+                    mins < 1 -> "Just now"
+                    mins == 1L -> "1 min ago"
+                    mins < 60 -> "${mins} mins ago"
+                    else -> "${TimeUnit.MILLISECONDS.toHours(System.currentTimeMillis() - uiState.lastSyncTime)} hrs ago"
+                }
+                Text(
+                    "Last updated: $syncLabel • From transactions sync",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+            TabBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+            PullToRefreshBox(
+                isRefreshing = uiState.isLoading,
+                onRefresh = { viewModel.refresh() }
+            ) {
+                when (selectedTab) {
+                    GtTab.OVERVIEW -> OverviewTab(viewModel = viewModel)
+                    GtTab.GOALS -> GoalsListTab(viewModel = viewModel)
+                    GtTab.AI_INSIGHTS -> AIInsightsTab(viewModel = viewModel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WelcomeBanner(username: String?) {
+    val displayName = username?.split("@")?.firstOrNull()?.takeIf { it.isNotBlank() }?.let {
+        it.replaceFirstChar { c -> c.uppercase() }
+    } ?: "User"
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(BannerPurple)
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Track your financial goals.",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            text = "Set targets, monitor progress, and achieve more. Welcome back, $displayName!",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f)
+        )
+    }
+}
+
+private enum class GtTab(val label: String, val icon: String) {
+    OVERVIEW("Overview", "📊"),
+    GOALS("Goals", "🎯"),
+    AI_INSIGHTS("AI Insights", "✨")
+}
+
+@Composable
+private fun TabBar(selectedTab: GtTab, onTabSelected: (GtTab) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        GtTab.entries.forEach { tab ->
+            val selected = tab == selectedTab
+            TextButton(
+                onClick = { onTabSelected(tab) },
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                    contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.background(
+                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent
+                )
+            ) {
+                Text("${tab.icon} ${tab.label}", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverviewTab(viewModel: GoalTrackerViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    if (uiState.isLoading && uiState.goals.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+        return
+    }
+
+    if (uiState.error != null && uiState.goals.isEmpty()) {
+        EmptyState(
+            title = "Unable to Load Data",
+            subtitle = uiState.error ?: "",
+            onRetry = { viewModel.loadData() }
+        )
+        return
+    }
+
+    val activeGoals = uiState.goals.filter { it.status.lowercase() == "active" }
+    val completedGoals = uiState.goals.filter { it.status.lowercase() == "completed" }
+    val totalProgress = if (uiState.progress.isNotEmpty()) {
+        uiState.progress.sumOf { it.progress_pct.toDouble() } / uiState.progress.size
+    } else 0.0
+    val achieverLevel = when {
+        uiState.goals.isEmpty() -> "Beginner"
+        completedGoals.size.toDouble() / uiState.goals.size >= 0.8 && totalProgress >= 80 -> "Expert"
+        completedGoals.size.toDouble() / uiState.goals.size >= 0.6 && totalProgress >= 60 -> "Advanced"
+        completedGoals.size.toDouble() / uiState.goals.size >= 0.4 && totalProgress >= 40 -> "Intermediate"
+        else -> "Beginner"
+    }
+
+    if (uiState.goals.isEmpty()) {
+        NoGoalsEmptyState()
+        return
+    }
+
+    val health = viewModel.goalHealthSummary()
+    val deadlines = viewModel.upcomingDeadlines()
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            GoalHealthCard(health = health)
+        }
+        if (deadlines.isNotEmpty()) {
+            item {
+                Text("Upcoming Deadlines", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = ChartOrange)
+            }
+            items(deadlines.size) { i ->
+                val (goal, prog) = deadlines[i]
+                UpcomingDeadlineCard(goal = goal, progress = prog, viewModel = viewModel)
+            }
+        }
+        item {
+            Text("Your Progress", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MetricCard(modifier = Modifier.weight(1f), label = "Active Goals", value = "${activeGoals.size}", color = ChartPurple)
+                MetricCard(modifier = Modifier.weight(1f), label = "Completed", value = "${completedGoals.size}", color = Success)
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MetricCard(modifier = Modifier.weight(1f), label = "Total Progress", value = "${totalProgress.toInt()}%", color = MaterialTheme.colorScheme.primary)
+                MetricCard(modifier = Modifier.weight(1f), label = "Goal Achiever", value = achieverLevel, color = MaterialTheme.colorScheme.error)
+            }
+        }
+        item {
+            Text("Active Goals", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+        if (activeGoals.isEmpty()) {
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("🎯", style = MaterialTheme.typography.displayMedium)
+                    Text("No Active Goals", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text("Create your first goal to start tracking.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
+                }
+            }
+        } else {
+            items(activeGoals, key = { it.goal_id }) { goal ->
+                val prog = uiState.progress.find { it.goal_id == goal.goal_id }
+                val animateFromPct = uiState.recentlyUpdatedGoalPrevPct[goal.goal_id]
+                GoalCard(goal = goal, progress = prog, viewModel = viewModel, animateFromPct = animateFromPct)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GoalsListTab(viewModel: GoalTrackerViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+    val filter = uiState.selectedFilter
+    val filteredGoals = when (filter?.lowercase()) {
+        "active" -> uiState.goals.filter { it.status.lowercase() == "active" }
+        "completed" -> uiState.goals.filter { it.status.lowercase() == "completed" }
+        else -> uiState.goals
+    }
+
+    if (uiState.isLoading && uiState.goals.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+        return
+    }
+
+    if (uiState.error != null && uiState.goals.isEmpty()) {
+        EmptyState(
+            title = "Unable to Load Goals",
+            subtitle = uiState.error ?: "",
+            onRetry = { viewModel.loadData() }
+        )
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(title = "All", selected = filter == null) { viewModel.setFilter(null) }
+                FilterChip(title = "Active", selected = filter == "active") { viewModel.setFilter("active") }
+                FilterChip(title = "Completed", selected = filter == "completed") { viewModel.setFilter("completed") }
+            }
+        }
+        if (filteredGoals.isEmpty()) {
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(if (filter == "completed") "✅" else "🎯", style = MaterialTheme.typography.displayLarge)
+                    Text(
+                        if (filter == "completed") "No Completed Goals" else "No Goals",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                    Text(
+                        if (filter == "completed") "Complete your first goal to see it here." else "Create your first goal to start tracking.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        } else {
+            items(filteredGoals, key = { it.goal_id }) { goal ->
+                val prog = uiState.progress.find { it.goal_id == goal.goal_id }
+                val animateFromPct = uiState.recentlyUpdatedGoalPrevPct[goal.goal_id]
+                GoalCard(goal = goal, progress = prog, viewModel = viewModel, animateFromPct = animateFromPct)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(title: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+            contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+        ),
+        modifier = Modifier.background(
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent,
+            RoundedCornerShape(8.dp)
+        )
+    ) {
+        Text(title, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+private data class AiInsightSection(val title: String, val color: Color, val emoji: String, val items: List<AiInsight>)
+
+@Composable
+private fun AIInsightsTab(viewModel: GoalTrackerViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+    val goals = uiState.goals
+    val progress = uiState.progress
+
+    val sections = remember(goals, progress) {
+        val milestones = mutableListOf<AiInsight>()
+        val risks = mutableListOf<AiInsight>()
+        val optimizations = mutableListOf<AiInsight>()
+        val completed = goals.filter { it.status.lowercase() == "completed" }
+        val active = goals.filter { it.status.lowercase() == "active" }
+
+        progress.filter { it.progress_pct >= 70 && it.progress_pct < 100 }.forEach { p ->
+            milestones.add(AiInsight("m-${p.goal_id}", "Milestone", "You've reached ${p.progress_pct.toInt()}% of your ${p.goal_name.lowercase()} goal.", "milestone"))
+        }
+        if (completed.isNotEmpty() && goals.isNotEmpty()) {
+            val rate = (completed.size.toDouble() / goals.size * 100).toInt()
+            milestones.add(AiInsight("rate", "Achievement Rate", "You're on track to complete $rate% of your goals this year!", "rate"))
+        }
+
+        progress.filter { prog ->
+            val daysLeft = prog.days_to_target ?: 999
+            val pct = prog.progress_pct
+            daysLeft <= 90 && pct < 50
+        }.forEach { p ->
+            val goal = goals.find { it.goal_id == p.goal_id }
+            val shortfall = p.remaining_amount
+            risks.add(AiInsight("r-${p.goal_id}", "Risk", "${goal?.goal_name ?: "Goal"} is underfunded by ${formatCurrency(shortfall)} this quarter.", "risk"))
+        }
+        active.firstOrNull()?.let { g ->
+            val prog = progress.find { it.goal_id == g.goal_id }
+            if (prog != null && prog.remaining_amount > 50000 && prog.monthly_required != null) {
+                val redirect = (prog.monthly_required * 0.2).toInt()
+                if (redirect >= 1000) {
+                    optimizations.add(AiInsight("o-${g.goal_id}", "Optimization", "You can redirect ${formatCurrency(redirect.toDouble())} from unused budget to ${g.goal_name}.", "optimization"))
+                }
+            }
+        }
+        if (optimizations.isEmpty() && active.isNotEmpty()) {
+            active.firstOrNull()?.let { g ->
+                val prog = progress.find { it.goal_id == g.goal_id }
+                if (prog != null && prog.remaining_amount > 20000) {
+                    optimizations.add(AiInsight("o2", "Optimization", "Consider increasing your ${g.goal_name.lowercase()} contribution to reach your goal faster.", "optimization"))
+                }
+            }
+        }
+
+        buildList {
+            if (milestones.isNotEmpty()) add(AiInsightSection("Milestones", Success, "🟢", milestones))
+            if (risks.isNotEmpty()) add(AiInsightSection("Risk", ChartOrange, "🟡", risks))
+            if (optimizations.isNotEmpty()) add(AiInsightSection("Optimization", AccentPrimary, "🔵", optimizations))
+            if (isEmpty()) add(AiInsightSection("Getting Started", AccentPrimary, "✨", listOf(AiInsight("0", "Tip", "Set up your first goal to start tracking your financial progress!", "tip"))))
+        }
+    }
+
+    if (uiState.isLoading) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text("AI Insights", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+        item {
+            Text("Personalized recommendations based on your goals", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+        }
+        sections.forEach { section ->
+            item {
+                Text(section.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = section.color)
+            }
+            items(section.items, key = { it.id }) { insight ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = section.color.copy(alpha = 0.12f)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, section.color.copy(alpha = 0.3f))
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(section.emoji, style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(insight.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = section.color)
+                            Text(insight.message, style = MaterialTheme.typography.bodySmall, color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GoalHealthCard(health: GoalTrackerViewModel.GoalHealthSummary) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = AccentPrimary.copy(alpha = 0.15f)),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, AccentPrimary.copy(alpha = 0.4f))
+    ) {
+        Column(Modifier.padding(20.dp)) {
+            Text("GOAL HEALTH", style = MaterialTheme.typography.labelSmall, color = AccentPrimary)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("${health.score} / 100", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("${health.onTrack} goals on track", style = MaterialTheme.typography.bodySmall, color = Success)
+                    Text("${health.atRisk} at risk", style = MaterialTheme.typography.bodySmall, color = if (health.atRisk > 0) ChartOrange else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpcomingDeadlineCard(goal: GoalResponse, progress: GoalProgressItem?, viewModel: GoalTrackerViewModel) {
+    val days = progress?.days_to_target ?: 0
+    val monthlyReq = progress?.monthly_required ?: 0.0
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = GlassCard),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("⚠ ${goal.goal_name}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = Color.White)
+                Text("Target in $days days", style = MaterialTheme.typography.labelSmall, color = ChartOrange)
+            }
+            if (monthlyReq > 0) {
+                Text("Need ${formatCurrency(monthlyReq)}/month to stay on track", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun GoalCard(goal: GoalResponse, progress: GoalProgressItem?, viewModel: GoalTrackerViewModel, animateFromPct: Float? = null) {
+    val progressPct = progress?.progress_pct ?: 0.0
+    val remaining = progress?.remaining_amount ?: (goal.estimated_cost - goal.current_savings).coerceAtLeast(0.0)
+    val animProgress = remember { Animatable(animateFromPct?.div(100f) ?: 0f) }
+    val targetProgress = (progressPct / 100.0).toFloat().coerceIn(0f, 1f)
+    LaunchedEffect(progressPct, animateFromPct) {
+        animProgress.animateTo(targetProgress, animationSpec = tween(600))
+    }
+    val showGlow = animateFromPct != null
+    val glowAlpha = remember { Animatable(if (showGlow) 0.4f else 0f) }
+    LaunchedEffect(showGlow) {
+        if (showGlow) {
+            glowAlpha.animateTo(0.4f, animationSpec = tween(150))
+            glowAlpha.animateTo(0f, animationSpec = tween(450))
+        }
+    }
+    val statusColor = when (goal.status.lowercase()) {
+        "completed" -> Success
+        "archived" -> Color.Gray
+        else -> Success
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = GlassCard),
+        shape = RoundedCornerShape(16.dp),
+        border = if (showGlow) BorderStroke(2.dp, AccentPrimary.copy(alpha = glowAlpha.value)) else null
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f)) {
+                    Text("${viewModel.goalEmoji(goal)} ${goal.goal_name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(viewModel.goalEmotionalLabel(goal), style = MaterialTheme.typography.labelSmall, color = AccentPrimary.copy(alpha = 0.9f))
+                    Text(goal.goal_category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                }
+                Text(
+                    goal.status.replaceFirstChar { it.uppercase() },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = statusColor
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Progress", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
+                Text("${progressPct.toInt()}%", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+            Spacer(Modifier.height(4.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(animProgress.value)
+                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                )
+            }
+            progress?.pace_description?.let { pace ->
+                Spacer(Modifier.height(4.dp))
+                Text("At current pace: $pace", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Saved", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                    Text(formatCurrency(goal.current_savings), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = Color.White)
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Target", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                    Text(formatCurrency(goal.estimated_cost), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = Color.White)
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Remaining", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                    Text(formatCurrency(remaining), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            if (progress?.monthly_required != null && progress.monthly_required > 0 && goal.target_date != null) {
+                Spacer(Modifier.height(6.dp))
+                Text("To finish by ${goal.target_date}: ${formatCurrency(progress.monthly_required)}/month required", style = MaterialTheme.typography.labelSmall, color = AccentPrimary.copy(alpha = 0.9f))
+            }
+            goal.target_date?.let { date ->
+                if (progress?.monthly_required == null || progress.monthly_required <= 0) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Target: $date", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricCard(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = GlassCard),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
+            Spacer(Modifier.height(4.dp))
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color)
+        }
+    }
+}
+
+@Composable
+private fun NoGoalsEmptyState() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("🎯", style = MaterialTheme.typography.displayLarge)
+        Spacer(Modifier.height(16.dp))
+        Text("No Goals Yet", style = MaterialTheme.typography.titleLarge, color = Color.White)
+        Text(
+            "Set up your financial goals first to start tracking progress.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+        )
+        Spacer(Modifier.height(24.dp))
+        Button(
+            onClick = { /* TODO: Open goals stepper / create flow */ },
+            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+            Text("Set Up Goals")
+        }
+    }
+}
+
+@Composable
+private fun EmptyState(title: String, subtitle: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(title, style = MaterialTheme.typography.titleLarge, color = Color.White)
+        Spacer(Modifier.height(8.dp))
+        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = onRetry,
+            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+        ) {
+            Text("Retry")
+        }
+    }
+}
+
+private data class AiInsight(val id: String, val title: String, val message: String, val type: String)
+
+private fun formatCurrency(amount: Double): String {
+    val abs = kotlin.math.abs(amount)
+    val formatted = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(abs.toLong())
+    return if (amount < 0) "-₹$formatted" else "₹$formatted"
+}

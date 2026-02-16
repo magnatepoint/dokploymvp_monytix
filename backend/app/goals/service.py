@@ -473,6 +473,7 @@ class GoalsService:
                 )
                 
                 # Build progress items using planner projections
+                today = date.today()
                 goal_progress = []
                 for goal in active_goals:
                     goal_id_str = str(goal["goal_id"])
@@ -525,18 +526,50 @@ class GoalsService:
                         except Exception as milestone_error:
                             logger.debug(f"Could not fetch milestones for goal {goal_id_str}: {milestone_error}")
 
-                    current_savings = goal.get("current_savings", 0.0)
-                    estimated_cost = goal.get("estimated_cost", 0.0)
+                    current_savings = float(goal.get("current_savings", 0.0))
+                    estimated_cost = float(goal.get("estimated_cost", 0.0))
                     remaining = max(estimated_cost - current_savings, 0.0)
+                    target_date = goal.get("target_date")
+                    if isinstance(target_date, str) and target_date:
+                        try:
+                            target_date = date.fromisoformat(target_date)
+                        except (ValueError, TypeError):
+                            target_date = None
+
+                    # Monthly required to finish by target date
+                    monthly_required = None
+                    pace_description = None
+                    days_to_target = None
+                    if target_date and remaining > 0:
+                        days_to_target = max((target_date - today).days, 0)
+                        months_left = max(days_to_target / 30.0, 0.1)
+                        monthly_required = round(remaining / months_left, 0)
+
+                        # Pace: compare projected vs target
+                        if planned_goal and planned_goal.projected_completion_date:
+                            proj = planned_goal.projected_completion_date
+                            if proj > target_date:
+                                days_behind = (proj - target_date).days
+                                pace_description = f"Behind schedule by {days_behind} days"
+                            else:
+                                months_to_finish = max(
+                                    (proj - today).days / 30.0, 0.1
+                                )
+                                pace_description = f"You'll finish in {months_to_finish:.1f} months"
+                        else:
+                            pace_description = f"You'll finish in {months_left:.1f} months"
 
                     goal_progress.append({
                         "goal_id": goal_id_str,
                         "goal_name": goal.get("goal_name", ""),
                         "progress_pct": progress_pct,
-                        "current_savings_close": float(current_savings),
+                        "current_savings_close": current_savings,
                         "remaining_amount": remaining,
                         "projected_completion_date": projected_date,
                         "milestones": milestones,
+                        "monthly_required": monthly_required,
+                        "pace_description": pace_description,
+                        "days_to_target": days_to_target,
                     })
 
                 return goal_progress

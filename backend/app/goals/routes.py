@@ -259,6 +259,9 @@ async def get_goals_progress(
                     "remaining_amount": remaining_amount,
                     "projected_completion_date": projected_date,
                     "milestones": milestones_list,
+                    "monthly_required": item.get("monthly_required"),
+                    "pace_description": item.get("pace_description"),
+                    "days_to_target": item.get("days_to_target"),
                 }
                 
                 # Validate the dict before creating Pydantic model

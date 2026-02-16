@@ -152,3 +152,104 @@ async def process_transactions_for_goals(
             f"Processed {processed_count} transactions through GoalRealtimeEngine for user {user_id}"
         )
 
+
+def _txn_type_to_linked(txn_type: str | None) -> str | None:
+    """Map vw_txn_effective txn_type to goal linked_txn_type (needs/wants/assets)."""
+    if not txn_type:
+        return None
+    t = txn_type.lower()
+    if t in ("needs", "wants", "assets"):
+        return t
+    if t == "debt":
+        return "needs"
+    if t in ("income", "transfer"):
+        return "assets"
+    return "wants"
+
+
+async def process_transaction_for_goals_by_id(
+    conn: asyncpg.Connection,
+    user_id: str,
+    txn_id: str,
+) -> list[dict]:
+    """
+    Process a single transaction (e.g. manual) for goal updates.
+    Fetches from vw_txn_effective which works for manual txns with txn_override.
+    """
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid user_id format for goal processing: {user_id}")
+        return []
+
+    row = await conn.fetchrow(
+        """
+        SELECT txn_id, user_id, txn_date, amount, direction,
+               category_code, subcategory_code, txn_type, merchant_name_norm
+        FROM spendsense.vw_txn_effective
+        WHERE txn_id = $1::uuid AND user_id = $2::uuid
+        """,
+        txn_id,
+        user_id,
+    )
+    if not row:
+        logger.debug(f"Transaction {txn_id} not found in vw_txn_effective for goal processing")
+        return []
+
+    linked_type = _txn_type_to_linked(str(row["txn_type"]) if row["txn_type"] else None)
+    # Use linked_type for goal matching (needs/wants/assets); category_code may not match
+    category = linked_type
+
+    txn_date_val = row["txn_date"]
+    if hasattr(txn_date_val, "date"):
+        txn_date_val = txn_date_val.date()
+    elif isinstance(txn_date_val, str):
+        txn_date_val = date.fromisoformat(txn_date_val)
+
+    txn_cat_code = str(row["category_code"]).strip() if row.get("category_code") else None
+    txn_sub_code = str(row["subcategory_code"]).strip() if row.get("subcategory_code") else None
+
+    txn_view = TransactionView(
+        id=UUID(str(row["txn_id"])),
+        user_id=user_uuid,
+        txn_date=txn_date_val,
+        amount=float(row["amount"]),
+        direction=str(row["direction"]),
+        category=linked_type,
+        subcategory=txn_sub_code,
+        merchant_name=str(row["merchant_name_norm"]) if row.get("merchant_name_norm") else None,
+        category_code=txn_cat_code,
+        subcategory_code=txn_sub_code,
+    )
+
+    context_row = await conn.fetchrow(
+        """
+        SELECT age_band, dependents_spouse, dependents_children_count,
+               dependents_parents_care, housing, employment, income_regularity,
+               region_code, emergency_opt_out,
+               monthly_investible_capacity, total_monthly_emi_obligations,
+               risk_profile_overall, review_frequency, notify_on_drift,
+               auto_adjust_on_income_change
+        FROM goal.user_life_context
+        WHERE user_id = $1
+        """,
+        user_uuid,
+    )
+    if not context_row:
+        logger.debug(f"No life context for user {user_id}, skipping goal processing for txn {txn_id}")
+        return []
+
+    context = dict(context_row)
+    goals_repo = GoalsRepository(conn)
+    signals_repo = GoalSignalsRepository(conn)
+    suggestions_repo = GoalSuggestionsRepository(conn)
+    engine = GoalRealtimeEngine(goals_repo, signals_repo, suggestions_repo)
+
+    try:
+        affected = await engine.process_transaction(user_uuid, txn_view, context)
+        logger.info(f"Processed transaction {txn_id} for goals for user {user_id}: {len(affected)} affected")
+        return affected
+    except Exception as e:
+        logger.error(f"Error processing transaction {txn_id} for goals: {e}", exc_info=True)
+        return []
+

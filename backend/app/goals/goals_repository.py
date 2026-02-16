@@ -69,6 +69,8 @@ class GoalsRepository:
             row = await self.conn.fetchrow(
                 """
                 SELECT goal_id, goal_category, goal_name, goal_type, linked_txn_type,
+                       linked_category_code, linked_subcategory_code, linked_direction,
+                       linked_min_amount, linked_match_confidence,
                        estimated_cost, target_date, current_savings, importance,
                        priority_rank, status, notes, is_must_have, timeline_flexibility,
                        risk_profile_for_goal, created_at, updated_at
@@ -101,6 +103,12 @@ class GoalsRepository:
                 result["timeline_flexibility"] = None
             if "risk_profile_for_goal" not in result:
                 result["risk_profile_for_goal"] = None
+            if "linked_category_code" not in result:
+                result["linked_category_code"] = None
+            if "linked_subcategory_code" not in result:
+                result["linked_subcategory_code"] = None
+            if "linked_direction" not in result:
+                result["linked_direction"] = None
             return result
         return None
 
@@ -110,6 +118,8 @@ class GoalsRepository:
             rows = await self.conn.fetch(
                 """
                 SELECT goal_id, goal_category, goal_name, goal_type, linked_txn_type,
+                       linked_category_code, linked_subcategory_code, linked_direction,
+                       linked_min_amount, linked_match_confidence,
                        estimated_cost, target_date, current_savings, importance,
                        priority_rank, status, notes, is_must_have, timeline_flexibility,
                        risk_profile_for_goal, created_at, updated_at
@@ -143,6 +153,12 @@ class GoalsRepository:
                 goal_dict["timeline_flexibility"] = None
             if "risk_profile_for_goal" not in goal_dict:
                 goal_dict["risk_profile_for_goal"] = None
+            if "linked_category_code" not in goal_dict:
+                goal_dict["linked_category_code"] = None
+            if "linked_subcategory_code" not in goal_dict:
+                goal_dict["linked_subcategory_code"] = None
+            if "linked_direction" not in goal_dict:
+                goal_dict["linked_direction"] = None
             result.append(goal_dict)
         return result
 

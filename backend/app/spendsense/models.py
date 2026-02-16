@@ -46,6 +46,33 @@ class TransactionRecord(BaseModel):
     confidence: float | None = None
 
 
+class UpdatedGoalItem(BaseModel):
+    """Goal updated by a transaction - for UI toast + animation."""
+
+    goal_id: str
+    goal_name: str
+    delta: float
+    prev_pct: float
+    new_pct: float
+    reason: str
+
+
+class TransactionCreateResponse(BaseModel):
+    """Response for POST /transactions - includes transaction + affected goals."""
+
+    txn_id: str
+    txn_date: date
+    merchant: str | None
+    category: str | None
+    subcategory: str | None
+    bank_code: str | None
+    channel: str | None
+    amount: float
+    direction: str
+    confidence: float | None = None
+    updated_goals: list[UpdatedGoalItem] = Field(default_factory=list)
+
+
 class TransactionListResponse(BaseModel):
     transactions: list[TransactionRecord]
     total: int

@@ -1,0 +1,985 @@
+package com.example.monytix.data
+
+import com.example.monytix.BuildConfig
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.engine.android.Android
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.request.delete
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+object BackendApi {
+
+    private val client = HttpClient(Android) {
+        install(ContentNegotiation) {
+            json(Json {
+                ignoreUnknownKeys = true
+                coerceInputValues = true
+            })
+        }
+    }
+
+    private val baseUrl = BuildConfig.BACKEND_URL.trimEnd('/')
+    private val spendsenseBase = "$baseUrl/v1/spendsense"
+    private val moneymomentsBase = "$baseUrl/v1/moneymoments"
+    private val budgetBase = "$baseUrl/v1/budget"
+
+    suspend fun healthCheck(): Result<HealthResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$baseUrl/health").body<HealthResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getSession(accessToken: String): Result<SessionResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$baseUrl/auth/session") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<SessionResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getConfig(): Result<ConfigResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$baseUrl/config").body<ConfigResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.success(
+                ConfigResponse(
+                    min_version_code = 1,
+                    app_store_url = "https://play.google.com/store/apps/details?id=com.example.monytix",
+                    feature_flags = emptyMap()
+                )
+            )
+        }
+    }
+
+    suspend fun uploadStatement(
+        accessToken: String,
+        fileBytes: ByteArray,
+        filename: String,
+        pdfPassword: String? = null
+    ): Result<UploadBatchResponse> = withContext(Dispatchers.IO) {
+        try {
+            val contentType = when {
+                filename.endsWith(".pdf", ignoreCase = true) -> ContentType.parse("application/pdf")
+                filename.endsWith(".csv", ignoreCase = true) -> ContentType.Text.CSV
+                filename.endsWith(".xlsx", ignoreCase = true) -> ContentType.parse("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                filename.endsWith(".xls", ignoreCase = true) -> ContentType.parse("application/vnd.ms-excel")
+                else -> ContentType.Application.OctetStream
+            }
+            val parts = formData {
+                append("file", fileBytes, Headers.build {
+                    append(HttpHeaders.ContentType, contentType.toString())
+                    append(HttpHeaders.ContentDisposition, "form-data; name=\"file\"; filename=\"$filename\"")
+                })
+                pdfPassword?.let { append("password", it) }
+            }
+            val response = client.submitFormWithBinaryData(
+                url = "$spendsenseBase/uploads/file",
+                formData = parts
+            ) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<UploadBatchResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getBatchStatus(
+        accessToken: String,
+        batchId: String
+    ): Result<UploadBatchResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$spendsenseBase/batches/$batchId") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<UploadBatchResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createTransaction(
+        accessToken: String,
+        data: TransactionCreateRequest
+    ): Result<TransactionCreateResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.post("$spendsenseBase/transactions") {
+                header("Authorization", "Bearer $accessToken")
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(data)
+            }.body<TransactionCreateResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getKpis(
+        accessToken: String,
+        month: String? = null
+    ): Result<KpiResponse> = withContext(Dispatchers.IO) {
+        try {
+            val url = if (month != null) "$spendsenseBase/kpis?month=$month" else "$spendsenseBase/kpis"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<KpiResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAccounts(accessToken: String): Result<AccountsResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$spendsenseBase/accounts") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<AccountsResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getInsights(
+        accessToken: String,
+        startDate: String? = null,
+        endDate: String? = null
+    ): Result<InsightsResponse> = withContext(Dispatchers.IO) {
+        try {
+            val params = buildList {
+                startDate?.let { add("start_date=$it") }
+                endDate?.let { add("end_date=$it") }
+            }
+            val url = if (params.isEmpty()) "$spendsenseBase/insights" else "$spendsenseBase/insights?${params.joinToString("&")}"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<InsightsResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getGoalsProgress(accessToken: String): Result<GoalsProgressResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$baseUrl/v1/goals/progress") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<GoalsProgressResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getUserGoals(accessToken: String): Result<List<GoalResponse>> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$baseUrl/v1/goals") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<List<GoalResponse>>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getTransactions(
+        accessToken: String,
+        limit: Int = 25,
+        offset: Int = 0,
+        search: String? = null,
+        categoryCode: String? = null,
+        subcategoryCode: String? = null,
+        channel: String? = null,
+        direction: String? = null,
+        bankCode: String? = null,
+        startDate: String? = null,
+        endDate: String? = null
+    ): Result<TransactionListResponse> = withContext(Dispatchers.IO) {
+        try {
+            val params = buildList {
+                add("limit=$limit")
+                add("offset=$offset")
+                search?.let { add("search=${java.net.URLEncoder.encode(it, "UTF-8")}") }
+                categoryCode?.let { add("category_code=$it") }
+                subcategoryCode?.let { add("subcategory_code=$it") }
+                channel?.let { add("channel=$it") }
+                direction?.let { add("direction=$it") }
+                bankCode?.let { add("bank_code=$it") }
+                startDate?.let { add("start_date=$it") }
+                endDate?.let { add("end_date=$it") }
+            }
+            val url = "$spendsenseBase/transactions?${params.joinToString("&")}"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<TransactionListResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateTransaction(
+        accessToken: String,
+        txnId: String,
+        categoryCode: String? = null,
+        subcategoryCode: String? = null,
+        merchantName: String? = null,
+        channel: String? = null
+    ): Result<TransactionRecordResponse> = withContext(Dispatchers.IO) {
+        try {
+            val updateBody = TransactionUpdateRequest(
+                category_code = categoryCode,
+                subcategory_code = subcategoryCode,
+                merchant_name = merchantName,
+                channel = channel
+            )
+            val resp = client.put("$spendsenseBase/transactions/$txnId") {
+                header("Authorization", "Bearer $accessToken")
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(updateBody)
+            }.body<TransactionRecordResponse>()
+            Result.success(resp)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteTransaction(
+        accessToken: String,
+        txnId: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            client.delete("$spendsenseBase/transactions/$txnId") {
+                header("Authorization", "Bearer $accessToken")
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getCategories(accessToken: String): Result<List<CategoryResponse>> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$spendsenseBase/categories") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<List<CategoryResponse>>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getSubcategories(
+        accessToken: String,
+        categoryCode: String? = null
+    ): Result<List<SubcategoryResponse>> = withContext(Dispatchers.IO) {
+        try {
+            val url = if (categoryCode != null) "$spendsenseBase/subcategories?category_code=$categoryCode" else "$spendsenseBase/subcategories"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<List<SubcategoryResponse>>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getChannels(accessToken: String): Result<List<String>> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$spendsenseBase/channels") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<List<String>>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAvailableMonths(accessToken: String): Result<AvailableMonthsResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$spendsenseBase/kpis/available-months") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<AvailableMonthsResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun refreshKpis(accessToken: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            client.post("$spendsenseBase/kpis/refresh") {
+                header("Authorization", "Bearer $accessToken")
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteAllData(accessToken: String): Result<DeleteDataResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.delete("$spendsenseBase/data") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<DeleteDataResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // MoneyMoments API
+    suspend fun getMoments(
+        accessToken: String,
+        month: String? = null,
+        allMonths: Boolean = false
+    ): Result<MoneyMomentsResponse> = withContext(Dispatchers.IO) {
+        try {
+            val params = buildList {
+                month?.let { add("month=$it") }
+                if (allMonths) add("all_months=true")
+            }
+            val url = if (params.isEmpty()) "$moneymomentsBase/moments" else "$moneymomentsBase/moments?${params.joinToString("&")}"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<MoneyMomentsResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun computeMoments(
+        accessToken: String,
+        targetMonth: String? = null
+    ): Result<ComputeMomentsResponse> = withContext(Dispatchers.IO) {
+        try {
+            val url = if (targetMonth != null) "$moneymomentsBase/moments/compute?target_month=$targetMonth" else "$moneymomentsBase/moments/compute"
+            val response = client.post(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<ComputeMomentsResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getNudges(
+        accessToken: String,
+        limit: Int = 20
+    ): Result<NudgesResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$moneymomentsBase/nudges?limit=$limit") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<NudgesResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun logNudgeInteraction(
+        accessToken: String,
+        deliveryId: String,
+        eventType: String,
+        metadata: Map<String, String>? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val body = NudgeInteractionRequest(event_type = eventType, metadata = metadata)
+            client.post("$moneymomentsBase/nudges/$deliveryId/interact") {
+                header("Authorization", "Bearer $accessToken")
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(body)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun evaluateNudges(
+        accessToken: String,
+        asOfDate: String? = null
+    ): Result<EvaluateNudgesResponse> = withContext(Dispatchers.IO) {
+        try {
+            val url = if (asOfDate != null) "$moneymomentsBase/nudges/evaluate?as_of_date=$asOfDate" else "$moneymomentsBase/nudges/evaluate"
+            val response = client.post(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<EvaluateNudgesResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun processNudges(
+        accessToken: String,
+        limit: Int = 10
+    ): Result<ProcessNudgesResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.post("$moneymomentsBase/nudges/process?limit=$limit") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<ProcessNudgesResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun computeSignal(
+        accessToken: String,
+        asOfDate: String? = null
+    ): Result<ComputeSignalResponse> = withContext(Dispatchers.IO) {
+        try {
+            val url = if (asOfDate != null) "$moneymomentsBase/signals/compute?as_of_date=$asOfDate" else "$moneymomentsBase/signals/compute"
+            val response = client.post(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<ComputeSignalResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // BudgetPilot API
+    suspend fun getBudgetRecommendations(
+        accessToken: String,
+        month: String? = null
+    ): Result<BudgetRecommendationsResponse> = withContext(Dispatchers.IO) {
+        try {
+            val url = if (month != null) "$budgetBase/recommendations?month=$month" else "$budgetBase/recommendations"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<BudgetRecommendationsResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getCommittedBudget(
+        accessToken: String,
+        month: String? = null
+    ): Result<CommittedBudgetResponse> = withContext(Dispatchers.IO) {
+        try {
+            val url = if (month != null) "$budgetBase/commit?month=$month" else "$budgetBase/commit"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<CommittedBudgetResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun commitBudget(
+        accessToken: String,
+        planCode: String,
+        month: String? = null
+    ): Result<CommittedBudget> = withContext(Dispatchers.IO) {
+        try {
+            val body = BudgetCommitRequest(plan_code = planCode, month = month)
+            val response = client.post("$budgetBase/commit") {
+                header("Authorization", "Bearer $accessToken")
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(body)
+            }.body<BudgetCommitResponse>()
+            Result.success(response.budget)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getBudgetVariance(
+        accessToken: String,
+        month: String? = null
+    ): Result<BudgetVarianceResponse> = withContext(Dispatchers.IO) {
+        try {
+            val url = if (month != null) "$budgetBase/variance?month=$month" else "$budgetBase/variance"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<BudgetVarianceResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+}
+
+@kotlinx.serialization.Serializable
+data class HealthResponse(val status: String = "ok")
+
+@kotlinx.serialization.Serializable
+data class ConfigResponse(
+    val min_version_code: Int = 1,
+    val app_store_url: String = "https://play.google.com/store/apps/details?id=com.example.monytix",
+    val feature_flags: Map<String, Boolean> = emptyMap(),
+    val maintenance_mode: Boolean = false
+)
+
+@kotlinx.serialization.Serializable
+data class SessionResponse(
+    val user_id: String,
+    val email: String?,
+    val role: String?
+)
+
+@kotlinx.serialization.Serializable
+data class UploadBatchResponse(
+    val upload_id: String,
+    val batch_id: String? = null,
+    val user_id: String,
+    val source_type: String,
+    val status: String,
+    val created_at: String,
+    val error_message: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class TransactionCreateRequest(
+    val txn_date: String,
+    val merchant_name: String,
+    val description: String? = null,
+    val amount: Double,
+    val direction: String,
+    val category_code: String? = null,
+    val subcategory_code: String? = null,
+    val channel: String? = null,
+    val account_ref: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class KpiResponse(
+    val month: String? = null,
+    val income_amount: Double = 0.0,
+    val needs_amount: Double = 0.0,
+    val wants_amount: Double = 0.0,
+    val assets_amount: Double = 0.0,
+    val total_debits_amount: Double = 0.0,
+    val top_categories: List<CategorySpendKpi> = emptyList(),
+    val wants_gauge: WantsGaugeResponse? = null,
+    val best_month: BestMonthResponse? = null,
+    val recent_loot_drop: LootDropResponse? = null
+)
+
+@kotlinx.serialization.Serializable
+data class CategorySpendKpi(
+    val category_code: String = "",
+    val category_name: String = "",
+    val txn_count: Int = 0,
+    val spend_amount: Double = 0.0,
+    val income_amount: Double = 0.0,
+    val delta_pct: Double? = null
+)
+
+@kotlinx.serialization.Serializable
+data class WantsGaugeResponse(
+    val ratio: Double = 0.0,
+    val label: String = "",
+    val threshold_crossed: Boolean = false
+)
+
+@kotlinx.serialization.Serializable
+data class BestMonthResponse(
+    val month: String = "",
+    val net_amount: Double = 0.0,
+    val delta_pct: Double? = null,
+    val is_current_best: Boolean = false
+)
+
+@kotlinx.serialization.Serializable
+data class AccountsResponse(
+    val accounts: List<AccountItemResponse> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class AccountItemResponse(
+    val id: String = "",
+    val bank_code: String = "",
+    val bank_name: String = "",
+    val account_number: String? = null,
+    val balance: Double = 0.0,
+    val account_type: String = "SAVINGS",
+    val transaction_count: Int = 0,
+    val last_txn_date: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class InsightsResponse(
+    val time_series: List<TimeSeriesPoint> = emptyList(),
+    val category_breakdown: List<CategoryBreakdownItem> = emptyList(),
+    val spending_trends: List<SpendingTrendItem> = emptyList(),
+    val recurring_transactions: List<RecurringItem> = emptyList(),
+    val spending_patterns: List<SpendingPatternItem> = emptyList(),
+    val top_merchants: List<TopMerchantItem> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class TimeSeriesPoint(val date: String = "", val value: Double = 0.0, val label: String? = null)
+
+@kotlinx.serialization.Serializable
+data class CategoryBreakdownItem(
+    val category_code: String = "",
+    val category_name: String = "",
+    val amount: Double = 0.0,
+    val percentage: Double = 0.0,
+    val transaction_count: Int = 0,
+    val avg_transaction: Double = 0.0
+)
+
+@kotlinx.serialization.Serializable
+data class SpendingTrendItem(
+    val period: String = "",
+    val income: Double = 0.0,
+    val expenses: Double = 0.0,
+    val net: Double = 0.0,
+    val needs: Double = 0.0,
+    val wants: Double = 0.0,
+    val assets: Double = 0.0
+)
+
+@kotlinx.serialization.Serializable
+data class RecurringItem(
+    val merchant_name: String = "",
+    val category_code: String = "",
+    val category_name: String = "",
+    val frequency: String = "",
+    val avg_amount: Double = 0.0,
+    val next_expected: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class SpendingPatternItem(
+    val day_of_week: String = "",
+    val amount: Double = 0.0,
+    val transaction_count: Int = 0
+)
+
+@kotlinx.serialization.Serializable
+data class TopMerchantItem(
+    val merchant_name: String = "",
+    val total_spend: Double = 0.0,
+    val transaction_count: Int = 0
+)
+
+@kotlinx.serialization.Serializable
+data class LootDropResponse(
+    val batch_id: String = "",
+    val occurred_at: String = "",
+    val transactions_unlocked: Int = 0,
+    val rarity: String = "common"
+)
+
+@kotlinx.serialization.Serializable
+data class GoalResponse(
+    val goal_id: String = "",
+    val goal_category: String = "",
+    val goal_name: String = "",
+    val goal_type: String = "",
+    val linked_txn_type: String? = null,
+    val estimated_cost: Double = 0.0,
+    val target_date: String? = null,
+    val current_savings: Double = 0.0,
+    val importance: Int? = null,
+    val priority_rank: Int? = null,
+    val status: String = "active",
+    val notes: String? = null,
+    val created_at: String = "",
+    val updated_at: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class GoalsProgressResponse(
+    val goals: List<GoalProgressItem> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class GoalProgressItem(
+    val goal_id: String = "",
+    val goal_name: String = "",
+    val progress_pct: Double = 0.0,
+    val current_savings_close: Double = 0.0,
+    val remaining_amount: Double = 0.0,
+    val projected_completion_date: String? = null,
+    val milestones: List<Int> = emptyList(),
+    val monthly_required: Double? = null,
+    val pace_description: String? = null,
+    val days_to_target: Int? = null
+)
+
+@kotlinx.serialization.Serializable
+data class UpdatedGoalItem(
+    val goal_id: String = "",
+    val goal_name: String = "",
+    val delta: Double = 0.0,
+    val prev_pct: Double = 0.0,
+    val new_pct: Double = 0.0,
+    val reason: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class TransactionCreateResponse(
+    val txn_id: String = "",
+    val txn_date: String = "",
+    val merchant: String? = null,
+    val category: String? = null,
+    val subcategory: String? = null,
+    val bank_code: String? = null,
+    val channel: String? = null,
+    val amount: Double = 0.0,
+    val direction: String = "",
+    val confidence: Double? = null,
+    val updated_goals: List<UpdatedGoalItem> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class TransactionRecordResponse(
+    val txn_id: String,
+    val txn_date: String,
+    val merchant: String?,
+    val category: String?,
+    val subcategory: String?,
+    val bank_code: String?,
+    val channel: String?,
+    val amount: Double,
+    val direction: String,
+    val confidence: Double? = null
+)
+
+@kotlinx.serialization.Serializable
+data class TransactionListResponse(
+    val transactions: List<TransactionRecordResponse> = emptyList(),
+    val total: Int = 0,
+    val page: Int = 1,
+    val page_size: Int = 25
+)
+
+@kotlinx.serialization.Serializable
+data class TransactionUpdateRequest(
+    val category_code: String? = null,
+    val subcategory_code: String? = null,
+    val merchant_name: String? = null,
+    val channel: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class CategoryResponse(
+    val category_code: String = "",
+    val category_name: String = "",
+    val is_custom: Boolean = false,
+    val txn_type: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class SubcategoryResponse(
+    val subcategory_code: String = "",
+    val subcategory_name: String = "",
+    val category_code: String = "",
+    val is_custom: Boolean = false
+)
+
+@kotlinx.serialization.Serializable
+data class AvailableMonthsResponse(
+    val data: List<String> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class DeleteDataResponse(
+    val transactions_deleted: Int = 0,
+    val batches_deleted: Int = 0,
+    val staging_deleted: Int = 0,
+    val overrides_deleted: Int = 0
+)
+
+// MoneyMoments types
+@kotlinx.serialization.Serializable
+data class MoneyMoment(
+    val user_id: String = "",
+    val month: String = "",
+    val habit_id: String = "",
+    val value: Double = 0.0,
+    val label: String = "",
+    val insight_text: String = "",
+    val confidence: Double = 0.0,
+    val created_at: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class Nudge(
+    val delivery_id: String = "",
+    val user_id: String = "",
+    val rule_id: String = "",
+    val template_code: String = "",
+    val channel: String = "",
+    val sent_at: String = "",
+    val send_status: String = "",
+    val metadata_json: Map<String, String>? = null,
+    val title_template: String? = null,
+    val body_template: String? = null,
+    val title: String? = null,
+    val body: String? = null,
+    val cta_text: String? = null,
+    val cta_deeplink: String? = null,
+    val rule_name: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class MoneyMomentsResponse(
+    val moments: List<MoneyMoment> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class ComputeMomentsResponse(
+    val status: String = "",
+    val moments: List<MoneyMoment> = emptyList(),
+    val count: Int = 0,
+    val message: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class NudgesResponse(
+    val nudges: List<Nudge> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class NudgeInteractionRequest(
+    val event_type: String,
+    val metadata: Map<String, String>? = null
+)
+
+@kotlinx.serialization.Serializable
+data class EvaluateNudgesResponse(
+    val status: String = "",
+    val count: Int = 0,
+    val candidates: List<String>? = null
+)
+
+@kotlinx.serialization.Serializable
+data class ProcessNudgesResponse(
+    val status: String = "",
+    val delivered: List<Nudge> = emptyList(),
+    val count: Int = 0
+)
+
+@kotlinx.serialization.Serializable
+data class ComputeSignalResponse(
+    val status: String = "",
+    val signal: Map<String, String>? = null
+)
+
+// BudgetPilot types
+@kotlinx.serialization.Serializable
+data class GoalAllocationPreview(
+    val goal_id: String = "",
+    val goal_name: String = "",
+    val allocation_pct: Double = 0.0,
+    val allocation_amount: Double = 0.0
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetRecommendation(
+    val plan_code: String = "",
+    val name: String = "",
+    val description: String? = null,
+    val needs_budget_pct: Double = 0.0,
+    val wants_budget_pct: Double = 0.0,
+    val savings_budget_pct: Double = 0.0,
+    val score: Double = 0.0,
+    val recommendation_reason: String = "",
+    val goal_preview: List<GoalAllocationPreview>? = null
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetRecommendationsResponse(
+    val recommendations: List<BudgetRecommendation> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class GoalAllocation(
+    val ubcga_id: String = "",
+    val user_id: String = "",
+    val month: String = "",
+    val goal_id: String = "",
+    val goal_name: String? = null,
+    val weight_pct: Double = 0.0,
+    val planned_amount: Double = 0.0,
+    val created_at: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class CommittedBudget(
+    val user_id: String = "",
+    val month: String = "",
+    val plan_code: String = "",
+    val alloc_needs_pct: Double = 0.0,
+    val alloc_wants_pct: Double = 0.0,
+    val alloc_assets_pct: Double = 0.0,
+    val notes: String? = null,
+    val committed_at: String = "",
+    val goal_allocations: List<GoalAllocation> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetCommitRequest(
+    val plan_code: String,
+    val month: String? = null,
+    val goal_allocations: Map<String, Double>? = null,
+    val notes: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetCommitResponse(
+    val status: String = "",
+    val budget: CommittedBudget = CommittedBudget()
+)
+
+@kotlinx.serialization.Serializable
+data class CommittedBudgetResponse(
+    val status: String = "",
+    val budget: CommittedBudget? = null
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetVariance(
+    val user_id: String = "",
+    val month: String = "",
+    val income_amt: Double = 0.0,
+    val needs_amt: Double = 0.0,
+    val planned_needs_amt: Double = 0.0,
+    val variance_needs_amt: Double = 0.0,
+    val wants_amt: Double = 0.0,
+    val planned_wants_amt: Double = 0.0,
+    val variance_wants_amt: Double = 0.0,
+    val assets_amt: Double = 0.0,
+    val planned_assets_amt: Double = 0.0,
+    val variance_assets_amt: Double = 0.0,
+    val computed_at: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetVarianceResponse(
+    val status: String = "",
+    val aggregate: BudgetVariance? = null
+)
