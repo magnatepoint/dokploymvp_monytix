@@ -1,12 +1,15 @@
 package com.example.monytix.budgetpilot
 
+import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,20 +19,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.monytix.data.BudgetRecommendation
+import com.example.monytix.data.BudgetStateResponse
 import com.example.monytix.data.CommittedBudget
 import com.example.monytix.data.BudgetVariance
 import com.example.monytix.ui.theme.BannerPurple
@@ -54,6 +66,11 @@ fun BudgetPilotScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val colorScheme = MaterialTheme.colorScheme
+    var showAddBudget by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        BudgetUpdateCache.consume()?.let { viewModel.refresh() }
+    }
 
     Scaffold(
         topBar = {
@@ -70,8 +87,21 @@ fun BudgetPilotScreen(
                 }
             )
         },
-        containerColor = colorScheme.background
+        containerColor = colorScheme.background,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showAddBudget = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add budget")
+            }
+        }
     ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = uiState.isLoadingState,
+            onRefresh = { viewModel.refresh() }
+        ) {
         LazyColumn(
             modifier = modifier
                 .fillMaxSize()
@@ -120,7 +150,11 @@ fun BudgetPilotScreen(
                 CommittedBudgetSection(
                     committedBudget = uiState.committedBudget,
                     variance = uiState.variance,
-                    isLoading = uiState.isLoadingCommitted
+                    budgetState = uiState.budgetState,
+                    lastUpdatedAt = uiState.lastUpdatedAt,
+                    isLoading = uiState.isLoadingCommitted,
+                    isRecalculating = uiState.isRecalculating,
+                    onRecalculate = { viewModel.recalculate() }
                 )
             }
             item {
@@ -165,6 +199,21 @@ fun BudgetPilotScreen(
             }
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
+        }
+    }
+
+    if (showAddBudget) {
+        AddBudgetDialog(
+            plans = uiState.recommendations.ifEmpty { defaultBudgetPlans() },
+            committedPlanCode = uiState.committedBudget?.plan_code,
+            isCommitting = uiState.isCommitting,
+            onDismiss = { showAddBudget = false },
+            onCommit = { planCode ->
+                Log.d("BudgetPilot", "AddBudgetDialog onCommit: planCode=$planCode")
+                viewModel.commitBudget(planCode)
+                showAddBudget = false
+            }
+        )
     }
 }
 
@@ -352,11 +401,123 @@ private fun QuickStatCard(
     }
 }
 
+private fun defaultBudgetPlans(): List<BudgetRecommendation> = listOf(
+    BudgetRecommendation(plan_code = "BAL_50_30_20", name = "Balanced 50/30/20", recommendation_reason = "Default balanced plan", score = 0.5),
+    BudgetRecommendation(plan_code = "EMERGENCY_FIRST", name = "Emergency Priority", recommendation_reason = "Boost savings until emergency funded", score = 0.5),
+    BudgetRecommendation(plan_code = "DEBT_FIRST", name = "Debt First", recommendation_reason = "Aggressive needs to repay debt", score = 0.5),
+    BudgetRecommendation(plan_code = "GOAL_PRIORITY", name = "Top 3 Goals Priority", recommendation_reason = "Assets tilt to top-3 goals", score = 0.5),
+    BudgetRecommendation(plan_code = "LEAN_BASICS", name = "Lean Basics", recommendation_reason = "Tighten wants, preserve savings", score = 0.5)
+)
+
+@Composable
+private fun AddBudgetDialog(
+    plans: List<BudgetRecommendation>,
+    committedPlanCode: String?,
+    isCommitting: Boolean,
+    onDismiss: () -> Unit,
+    onCommit: (String) -> Unit
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(Modifier.padding(24.dp)) {
+                Text(
+                    "Add Budget",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Choose a budget plan to commit to. Allocations are tailored to your goals.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                )
+                Spacer(Modifier.height(16.dp))
+                plans.forEach { rec ->
+                    val isCommitted = committedPlanCode == rec.plan_code
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isCommitted) ChartGreen.copy(alpha = 0.15f) else GlassCard
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    rec.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (rec.recommendation_reason.isNotBlank()) {
+                                    Text(
+                                        rec.recommendation_reason,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                            if (isCommitted) {
+                                Text("Committed", style = MaterialTheme.typography.labelMedium, color = ChartGreen)
+                            } else if (!isCommitting) {
+                                Button(
+                                    onClick = { onCommit(rec.plan_code) },
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                ) {
+                                    Text("Commit")
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                }
+            }
+        }
+    }
+}
+
+private fun formatLastUpdated(iso: String?): String {
+    if (iso == null) return ""
+    return try {
+        val t = java.time.Instant.parse(iso)
+        val now = java.time.Instant.now()
+        val mins = java.time.Duration.between(t, now).toMinutes()
+        when {
+            mins < 1 -> "Just now"
+            mins < 60 -> "${mins}m ago"
+            else -> "${mins / 60}h ago"
+        }
+    } catch (_: Exception) { "" }
+}
+
 @Composable
 private fun CommittedBudgetSection(
     committedBudget: CommittedBudget?,
     variance: BudgetVariance?,
-    isLoading: Boolean
+    budgetState: BudgetStateResponse?,
+    lastUpdatedAt: String?,
+    isLoading: Boolean,
+    isRecalculating: Boolean,
+    onRecalculate: () -> Unit
 ) {
     if (isLoading) {
         Box(
@@ -369,16 +530,52 @@ private fun CommittedBudgetSection(
         }
     } else if (committedBudget != null) {
         Column {
-            Text(
-                text = "Your Committed Budget",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Your Committed Budget",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (lastUpdatedAt != null) {
+                    Text(
+                        text = "Last updated: ${formatLastUpdated(lastUpdatedAt)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = onRecalculate,
+                    enabled = !isRecalculating,
+                    modifier = Modifier.height(28.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    if (isRecalculating) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    Text(if (isRecalculating) "Recalculating..." else "Recalculate now", style = MaterialTheme.typography.labelSmall)
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
             CommittedBudgetCard(
                 committedBudget = committedBudget,
-                variance = variance
+                variance = variance,
+                budgetState = budgetState
             )
         }
     } else {
@@ -412,8 +609,13 @@ private fun CommittedBudgetSection(
 @Composable
 private fun CommittedBudgetCard(
     committedBudget: CommittedBudget,
-    variance: BudgetVariance?
+    variance: BudgetVariance?,
+    budgetState: BudgetStateResponse?
 ) {
+    val actual = budgetState?.actual
+    val deviation = budgetState?.deviation
+    val hasActuals = actual != null && (actual.needs_pct > 0 || actual.wants_pct > 0 || actual.savings_pct > 0)
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = GlassCard),
@@ -434,25 +636,110 @@ private fun CommittedBudgetCard(
                 Text(text = "✓", style = MaterialTheme.typography.titleLarge, color = ChartGreen)
             }
             Spacer(modifier = Modifier.height(12.dp))
-            BudgetAllocationBar(
-                needsPct = committedBudget.alloc_needs_pct,
-                wantsPct = committedBudget.alloc_wants_pct,
-                savingsPct = committedBudget.alloc_assets_pct
-            )
-            if (variance != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Needs: ${formatCurrency(variance.needs_amt)} / ${formatCurrency(variance.planned_needs_amt)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+            if (hasActuals && actual != null && deviation != null) {
+                TargetVsActualBar(
+                    targetNeeds = committedBudget.alloc_needs_pct,
+                    targetWants = committedBudget.alloc_wants_pct,
+                    targetSavings = committedBudget.alloc_assets_pct,
+                    actualNeeds = actual.needs_pct / 100,
+                    actualWants = actual.wants_pct / 100,
+                    actualSavings = actual.savings_pct / 100
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "This month: Needs ${actual.needs_pct.toInt()}% (${formatDeviation(deviation.needs)}) • Wants ${actual.wants_pct.toInt()}% (${formatDeviation(deviation.wants)}) • Savings ${actual.savings_pct.toInt()}% (${formatDeviation(deviation.savings)})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                )
+            } else {
+                BudgetAllocationBar(
+                    needsPct = committedBudget.alloc_needs_pct,
+                    wantsPct = committedBudget.alloc_wants_pct,
+                    savingsPct = committedBudget.alloc_assets_pct
+                )
+                if (variance != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Needs: ${formatCurrency(variance.needs_amt)} / ${formatCurrency(variance.planned_needs_amt)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                        Text(
+                            text = "Wants: ${formatCurrency(variance.wants_amt)} / ${formatCurrency(variance.planned_wants_amt)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TargetVsActualBar(
+    targetNeeds: Double,
+    targetWants: Double,
+    targetSavings: Double,
+    actualNeeds: Double,
+    actualWants: Double,
+    actualSavings: Double
+) {
+    Column {
+        Row(modifier = Modifier.fillMaxWidth().height(24.dp)) {
+            listOf(
+                Triple(targetNeeds, actualNeeds, ChartBlue),
+                Triple(targetWants, actualWants, ChartOrange),
+                Triple(targetSavings, actualSavings, ChartGreen)
+            ).forEachIndexed { i, (targetFrac, actualFrac, color) ->
+                val targetW = targetFrac.toFloat().coerceIn(0.01f, 1f)
+                    Box(
+                        modifier = Modifier
+                            .weight(targetW)
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                            .padding(horizontal = 1.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(color.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                        )
+                        val fillRatio = if (targetFrac > 0) (actualFrac / targetFrac).toFloat().coerceIn(0f, 1f) else 0f
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(fillRatio)
+                                .fillMaxSize()
+                                .background(color, RoundedCornerShape(4.dp))
+                        )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            listOf(
+                Triple("Needs", (actualNeeds * 100).toInt(), ChartBlue),
+                Triple("Wants", (actualWants * 100).toInt(), ChartOrange),
+                Triple("Savings", (actualSavings * 100).toInt(), ChartGreen)
+            ).forEach { (label, pct, color) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .width(8.dp)
+                            .height(8.dp)
+                            .background(color, RoundedCornerShape(4.dp))
                     )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Wants: ${formatCurrency(variance.wants_amt)} / ${formatCurrency(variance.planned_wants_amt)}",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "$label $pct%",
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                     )
                 }

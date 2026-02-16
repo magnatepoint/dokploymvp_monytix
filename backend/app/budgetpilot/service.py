@@ -204,6 +204,147 @@ class BudgetService:
             repo = BudgetRepository(conn)
             return await repo.get_month_aggregate(user_id, month)
 
+    async def get_budget_state(
+        self, user_id: UUID, month: date | None = None
+    ) -> dict[str, Any]:
+        """
+        Get unified budget state: committed plan, actuals, deviation, plans with scores.
+        Refreshes aggregate before returning so data is always current.
+        """
+        if month is None:
+            month = date.today().replace(day=1)
+        else:
+            month = month.replace(day=1)
+
+        async with self.pool.acquire() as conn:
+            # Refresh aggregate first (ensures we have latest from transactions)
+            from .transaction_hook import refresh_budget_aggregate
+            await refresh_budget_aggregate(conn, str(user_id), month)
+
+            repo = BudgetRepository(conn)
+            commit = await repo.get_user_commit(user_id, month)
+            aggregate = await repo.get_month_aggregate(user_id, month)
+            try:
+                recommendations = await self.get_recommendations(user_id, month)
+            except Exception as e:
+                logger.warning(f"get_recommendations failed, using plan templates: {e}")
+                recommendations = []
+            if not recommendations:
+                templates = await repo.get_plan_templates(active_only=True)
+                recommendations = [
+                    {
+                        "plan_code": t["plan_code"],
+                        "name": t["name"],
+                        "description": t.get("description"),
+                        "score": 0.5,
+                        "recommendation_reason": "Default plan. Add transactions for personalized recommendations.",
+                    }
+                    for t in templates[:5]
+                ]
+
+        if not commit:
+            return {
+                "month": month.strftime("%Y-%m"),
+                "committed_plan": None,
+                "actual": None,
+                "deviation": None,
+                "plans": [
+                    {
+                        "plan_id": r["plan_code"],
+                        "name": r.get("name", r["plan_code"]),
+                        "score": float(r.get("score", 0)),
+                        "reason": r.get("recommendation_reason", ""),
+                    }
+                    for r in recommendations[:5]
+                ],
+                "last_updated_at": None,
+            }
+
+        target = {
+            "needs": round(float(commit["alloc_needs_pct"]) * 100, 1),
+            "wants": round(float(commit["alloc_wants_pct"]) * 100, 1),
+            "savings": round(float(commit["alloc_assets_pct"]) * 100, 1),
+        }
+
+        if not aggregate or aggregate.get("income_amt", 0) <= 0:
+            return {
+                "month": month.strftime("%Y-%m"),
+                "committed_plan": {
+                    "plan_id": commit["plan_code"],
+                    "target": target,
+                },
+                "income_amt": 0,
+                "actual": {
+                    "needs_pct": 0,
+                    "wants_pct": 0,
+                    "savings_pct": 0,
+                    "needs_amt": 0,
+                    "wants_amt": 0,
+                    "savings_amt": 0,
+                },
+                "deviation": {"needs": 0, "wants": 0, "savings": 0},
+                "plans": [
+                    {
+                        "plan_id": r["plan_code"],
+                        "name": r.get("name", r["plan_code"]),
+                        "score": float(r.get("score", 0)),
+                        "reason": (r.get("recommendation_reason") or "")[:80],
+                    }
+                    for r in recommendations[:5]
+                ],
+                "last_updated_at": (
+                    aggregate["computed_at"].isoformat()
+                    if aggregate and aggregate.get("computed_at")
+                    else None
+                ),
+            }
+
+        income = float(aggregate["income_amt"])
+        needs_amt = float(aggregate["needs_amt"])
+        wants_amt = float(aggregate["wants_amt"])
+        savings_amt = float(aggregate["assets_amt"])
+        actual_needs_pct = round((needs_amt / income) * 100, 1) if income > 0 else 0
+        actual_wants_pct = round((wants_amt / income) * 100, 1) if income > 0 else 0
+        actual_savings_pct = round((savings_amt / income) * 100, 1) if income > 0 else 0
+
+        deviation = {
+            "needs": round(actual_needs_pct - target["needs"], 1),
+            "wants": round(actual_wants_pct - target["wants"], 1),
+            "savings": round(actual_savings_pct - target["savings"], 1),
+        }
+
+        return {
+            "month": month.strftime("%Y-%m"),
+            "committed_plan": {
+                "plan_id": commit["plan_code"],
+                "target": target,
+            },
+            "income_amt": round(income, 2),
+            "actual": {
+                "needs_pct": actual_needs_pct,
+                "wants_pct": actual_wants_pct,
+                "savings_pct": actual_savings_pct,
+                "needs_amt": round(needs_amt, 2),
+                "wants_amt": round(wants_amt, 2),
+                "savings_amt": round(savings_amt, 2),
+            },
+            "deviation": deviation,
+            "plans": [
+                {
+                    "plan_id": r["plan_code"],
+                    "name": r.get("name", r["plan_code"]),
+                    "score": float(r.get("score", 0)),
+                    "reason": (r.get("recommendation_reason") or "")[:80],
+                }
+                for r in recommendations[:5]
+            ],
+            "last_updated_at": (
+                aggregate["computed_at"].isoformat()
+                if aggregate.get("computed_at")
+                else None
+            ),
+        }
+
     async def apply_adjustment(
         self,
         user_id: UUID,

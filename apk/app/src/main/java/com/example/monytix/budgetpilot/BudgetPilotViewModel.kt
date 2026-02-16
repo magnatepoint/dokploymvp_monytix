@@ -1,12 +1,15 @@
 package com.example.monytix.budgetpilot
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.monytix.data.BackendApi
+import com.example.monytix.data.TransactionCreateRequest
 import com.example.monytix.data.BudgetRecommendation
 import com.example.monytix.data.CommittedBudget
 import com.example.monytix.data.BudgetVariance
 import com.example.monytix.data.Supabase
+import com.example.monytix.goaltracker.GoalUpdateCache
 import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,14 +40,18 @@ data class BudgetPilotUiState(
     val variance: BudgetVariance? = null,
     val deviation: BudgetDeviation? = null,
     val autopilotSuggestion: AutopilotSuggestion? = null,
+    val budgetState: com.example.monytix.data.BudgetStateResponse? = null,
+    val lastUpdatedAt: String? = null,
     val userEmail: String? = null,
     val selectedMonth: String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE).substring(0, 7),
     val isLoadingRecommendations: Boolean = false,
     val isLoadingCommitted: Boolean = false,
     val isLoadingVariance: Boolean = false,
+    val isLoadingState: Boolean = false,
     val isCommitting: Boolean = false,
     val committingPlanCode: String? = null,
     val isApplyingAdjustment: Boolean = false,
+    val isRecalculating: Boolean = false,
     val error: String? = null
 )
 
@@ -84,10 +91,11 @@ class BudgetPilotViewModel : ViewModel() {
         viewModelScope.launch {
             val token = getAccessToken() ?: return@launch
             val month = _uiState.value.selectedMonth
-            val monthParam = if (month.isNotBlank()) "${month}-01" else null
+            val monthParam = if (month.isNotBlank()) month else null
 
             _uiState.update {
                 it.copy(
+                    isLoadingState = true,
                     isLoadingRecommendations = true,
                     isLoadingCommitted = true,
                     isLoadingVariance = true,
@@ -95,53 +103,124 @@ class BudgetPilotViewModel : ViewModel() {
                 )
             }
 
-            val recResult = withContext(Dispatchers.IO) {
-                BackendApi.getBudgetRecommendations(token, monthParam)
-            }
-            val committedResult = withContext(Dispatchers.IO) {
-                BackendApi.getCommittedBudget(token, monthParam)
-            }
-            val varianceResult = withContext(Dispatchers.IO) {
-                BackendApi.getBudgetVariance(token, monthParam)
+            val stateResult = withContext(Dispatchers.IO) {
+                BackendApi.getBudgetState(token, monthParam)
             }
 
-            val committed = committedResult.getOrNull()
-            val committedBudget = when (committed?.status) {
-                "committed" -> committed.budget
-                else -> null
-            }
+            stateResult.fold(
+                onSuccess = { state ->
+                    val committedPlan = state.committed_plan
+                    val committedBudget = committedPlan?.let { cp ->
+                        CommittedBudget(
+                            plan_code = cp.plan_id,
+                            alloc_needs_pct = (cp.target["needs"] ?: 0.0) / 100.0,
+                            alloc_wants_pct = (cp.target["wants"] ?: 0.0) / 100.0,
+                            alloc_assets_pct = (cp.target["savings"] ?: 0.0) / 100.0,
+                            goal_allocations = emptyList()
+                        )
+                    }
+                    val actual = state.actual
+                    val income = state.income_amt
+                    val variance = state.committed_plan?.let { cp ->
+                        val targetNeeds = (cp.target["needs"] ?: 0.0) / 100.0 * income
+                        val targetWants = (cp.target["wants"] ?: 0.0) / 100.0 * income
+                        val targetSavings = (cp.target["savings"] ?: 0.0) / 100.0 * income
+                        BudgetVariance(
+                            income_amt = if (income > 0) income else 1.0,  // avoid div by zero
+                            needs_amt = actual?.needs_amt ?: 0.0,
+                            planned_needs_amt = targetNeeds,
+                            variance_needs_amt = (actual?.needs_amt ?: 0.0) - targetNeeds,
+                            wants_amt = actual?.wants_amt ?: 0.0,
+                            planned_wants_amt = targetWants,
+                            variance_wants_amt = (actual?.wants_amt ?: 0.0) - targetWants,
+                            assets_amt = actual?.savings_amt ?: 0.0,
+                            planned_assets_amt = targetSavings,
+                            variance_assets_amt = (actual?.savings_amt ?: 0.0) - targetSavings
+                        )
+                    }
+                    val deviation = state.deviation?.let { d ->
+                        BudgetDeviation(needs = d.needs, wants = d.wants, savings = d.savings)
+                    }
+                    val suggestion = deviation?.let { d ->
+                        when {
+                            d.savings < -5 && d.wants > 5 ->
+                                AutopilotSuggestion("wants", "savings", minOf(5.0, -d.savings / 2, d.wants), "Move ${minOf(5.0, -d.savings / 2).toInt()}% from wants to savings")
+                            d.savings < -5 ->
+                                AutopilotSuggestion("wants", "savings", minOf(5.0, -d.savings / 2), "Move ${minOf(5.0, -d.savings / 2).toInt()}% from wants to savings")
+                            else -> null
+                        }
+                    }
+                    val recommendations = state.plans.map { p ->
+                        BudgetRecommendation(
+                            plan_code = p.plan_id,
+                            name = p.name,
+                            recommendation_reason = p.reason,
+                            score = p.score
+                        )
+                    }
+                    _uiState.update {
+                        it.copy(
+                            budgetState = state,
+                            committedBudget = committedBudget,
+                            variance = variance,
+                            deviation = deviation,
+                            autopilotSuggestion = suggestion,
+                            recommendations = recommendations,
+                            lastUpdatedAt = state.last_updated_at,
+                            isLoadingState = false,
+                            isLoadingRecommendations = false,
+                            isLoadingCommitted = false,
+                            isLoadingVariance = false
+                        )
+                    }
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(
+                            isLoadingState = false,
+                            isLoadingRecommendations = false,
+                            isLoadingCommitted = false,
+                            isLoadingVariance = false,
+                            error = e.message ?: "Failed to load budget state"
+                        )
+                    }
+                }
+            )
+        }
+    }
 
-            val varianceResp = varianceResult.getOrNull()
-            val variance = when (varianceResp?.status) {
-                "ok" -> varianceResp.aggregate
-                else -> null
-            }
+    fun recalculate() {
+        viewModelScope.launch {
+            val token = getAccessToken() ?: return@launch
+            val month = _uiState.value.selectedMonth
+            val monthParam = if (month.isNotBlank()) month else null
 
-            val (deviation, suggestion) = variance?.let { v -> computeDeviationAndSuggestion(v, committedBudget) } ?: (null to null)
-
-            _uiState.update {
-                it.copy(
-                    recommendations = recResult.getOrNull()?.recommendations ?: emptyList(),
-                    committedBudget = committedBudget,
-                    variance = variance,
-                    deviation = deviation,
-                    autopilotSuggestion = suggestion,
-                    isLoadingRecommendations = false,
-                    isLoadingCommitted = false,
-                    isLoadingVariance = false,
-                    error = recResult.exceptionOrNull()?.message
-                        ?: committedResult.exceptionOrNull()?.message
-                        ?: varianceResult.exceptionOrNull()?.message
-                )
+            _uiState.update { it.copy(isRecalculating = true) }
+            val result = withContext(Dispatchers.IO) {
+                BackendApi.recalculateBudget(token, monthParam)
             }
+            result.fold(
+                onSuccess = { loadData() },
+                onFailure = { e -> _uiState.update { it.copy(error = e.message ?: "Recalculate failed") } }
+            )
+            _uiState.update { it.copy(isRecalculating = false) }
         }
     }
 
     fun commitBudget(planCode: String) {
+        Log.d("BudgetPilot", "commitBudget called: planCode=$planCode")
         viewModelScope.launch {
-            val token = getAccessToken() ?: return@launch
+            val token = getAccessToken()
+            if (token == null) {
+                Log.e("BudgetPilot", "commitBudget: No access token, user may not be logged in")
+                _uiState.update {
+                    it.copy(error = "Not logged in. Please sign in again.")
+                }
+                return@launch
+            }
             val month = _uiState.value.selectedMonth
             val monthParam = if (month.isNotBlank()) "${month}-01" else null
+            Log.d("BudgetPilot", "commitBudget: calling API planCode=$planCode month=$monthParam")
 
             _uiState.update {
                 it.copy(isCommitting = true, committingPlanCode = planCode)
@@ -151,8 +230,10 @@ class BudgetPilotViewModel : ViewModel() {
                 BackendApi.commitBudget(token, planCode, monthParam)
             }
 
+            Log.d("BudgetPilot", "commitBudget: result isSuccess=${result.isSuccess}")
             result.fold(
                 onSuccess = { budget ->
+                    Log.d("BudgetPilot", "commitBudget: success plan_code=${budget.plan_code}")
                     _uiState.update {
                         it.copy(
                             committedBudget = budget,
@@ -163,6 +244,7 @@ class BudgetPilotViewModel : ViewModel() {
                     loadData()
                 },
                 onFailure = { e ->
+                    Log.e("BudgetPilot", "commitBudget: failed", e)
                     _uiState.update {
                         it.copy(
                             isCommitting = false,
@@ -208,6 +290,53 @@ class BudgetPilotViewModel : ViewModel() {
                         it.copy(
                             isApplyingAdjustment = false,
                             error = e.message ?: "Failed to apply adjustment"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun createTransaction(
+        txnDate: String,
+        merchantName: String,
+        description: String?,
+        amount: Double,
+        direction: String,
+        categoryCode: String?,
+        subcategoryCode: String?,
+        channel: String?
+    ) {
+        viewModelScope.launch {
+            val token = getAccessToken() ?: return@launch
+            _uiState.update { it.copy(isLoadingState = true, error = null) }
+            val result = withContext(Dispatchers.IO) {
+                BackendApi.createTransaction(
+                    token,
+                    com.example.monytix.data.TransactionCreateRequest(
+                        txn_date = txnDate,
+                        merchant_name = merchantName,
+                        description = description,
+                        amount = amount,
+                        direction = direction,
+                        category_code = categoryCode,
+                        subcategory_code = subcategoryCode,
+                        channel = channel
+                    )
+                )
+            }
+            result.fold(
+                onSuccess = { resp ->
+                    BudgetUpdateCache.setFromTransactionCreate(resp.budget_state)
+                    GoalUpdateCache.setFromTransactionCreate(resp.updated_goals)
+                    _uiState.update { it.copy(isLoadingState = false) }
+                    loadData()
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(
+                            isLoadingState = false,
+                            error = e.message ?: "Failed to add transaction"
                         )
                     }
                 }

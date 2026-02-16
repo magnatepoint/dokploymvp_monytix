@@ -1,5 +1,6 @@
 package com.example.monytix.data
 
+import android.util.Log
 import com.example.monytix.BuildConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -198,6 +199,33 @@ object BackendApi {
             val response = client.get("$baseUrl/v1/goals") {
                 header("Authorization", "Bearer $accessToken")
             }.body<List<GoalResponse>>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createGoal(
+        accessToken: String,
+        goalCategory: String,
+        goalName: String,
+        estimatedCost: Double,
+        targetDate: String? = null,
+        currentSavings: Double = 0.0
+    ): Result<CreateGoalResponse> = withContext(Dispatchers.IO) {
+        try {
+            val body = buildMap {
+                put("goal_category", goalCategory)
+                put("goal_name", goalName)
+                put("estimated_cost", estimatedCost)
+                put("current_savings", currentSavings)
+                targetDate?.let { put("target_date", it) }
+            }
+            val response = client.post("$baseUrl/v1/goals") {
+                header("Authorization", "Bearer $accessToken")
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(body)
+            }.body<CreateGoalResponse>()
             Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
@@ -500,13 +528,48 @@ object BackendApi {
         month: String? = null
     ): Result<CommittedBudget> = withContext(Dispatchers.IO) {
         try {
+            Log.d("BackendApi", "commitBudget: POST $budgetBase/commit planCode=$planCode month=$month")
             val body = BudgetCommitRequest(plan_code = planCode, month = month)
             val response = client.post("$budgetBase/commit") {
                 header("Authorization", "Bearer $accessToken")
                 contentType(io.ktor.http.ContentType.Application.Json)
                 setBody(body)
             }.body<BudgetCommitResponse>()
+            Log.d("BackendApi", "commitBudget: success plan_code=${response.budget.plan_code}")
             Result.success(response.budget)
+        } catch (e: Exception) {
+            Log.e("BackendApi", "commitBudget: failed", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getBudgetState(
+        accessToken: String,
+        month: String? = null
+    ): Result<BudgetStateResponse> = withContext(Dispatchers.IO) {
+        try {
+            val monthParam = if (month != null && month.isNotBlank()) "${month}-01" else null
+            val url = if (monthParam != null) "$budgetBase/state?month=$monthParam" else "$budgetBase/state"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<BudgetStateResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun recalculateBudget(
+        accessToken: String,
+        month: String? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val monthParam = if (month != null && month.isNotBlank()) "${month}-01" else null
+            val url = if (monthParam != null) "$budgetBase/recalculate?month=$monthParam" else "$budgetBase/recalculate"
+            client.post(url) {
+                header("Authorization", "Bearer $accessToken")
+            }
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -734,6 +797,12 @@ data class GoalResponse(
     val notes: String? = null,
     val created_at: String = "",
     val updated_at: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class CreateGoalResponse(
+    val status: String = "",
+    val goal_id: String? = null
 )
 
 @kotlinx.serialization.Serializable
@@ -1020,6 +1089,48 @@ data class BudgetVariance(
     val planned_assets_amt: Double = 0.0,
     val variance_assets_amt: Double = 0.0,
     val computed_at: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetStateResponse(
+    val month: String = "",
+    val committed_plan: BudgetStateCommittedPlan? = null,
+    val income_amt: Double = 0.0,
+    val actual: BudgetStateActual? = null,
+    val deviation: BudgetStateDeviation? = null,
+    val plans: List<BudgetStatePlan> = emptyList(),
+    val last_updated_at: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetStateCommittedPlan(
+    val plan_id: String = "",
+    val target: Map<String, Double> = emptyMap()
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetStateActual(
+    val needs_pct: Double = 0.0,
+    val wants_pct: Double = 0.0,
+    val savings_pct: Double = 0.0,
+    val needs_amt: Double = 0.0,
+    val wants_amt: Double = 0.0,
+    val savings_amt: Double = 0.0
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetStateDeviation(
+    val needs: Double = 0.0,
+    val wants: Double = 0.0,
+    val savings: Double = 0.0
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetStatePlan(
+    val plan_id: String = "",
+    val name: String = "",
+    val score: Double = 0.0,
+    val reason: String = ""
 )
 
 @kotlinx.serialization.Serializable

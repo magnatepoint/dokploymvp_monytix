@@ -27,6 +27,8 @@ This guide walks you through deploying the MVP backend to [Dokploy](https://dokp
 
 In the **Environment** tab, add these variables (Dokploy creates a `.env` file):
 
+**Important:** Do **not** set `REDIS_URL=redis://localhost:6379/0` in Dokploy. The compose file sets `REDIS_URL=redis://redis:6379/0` for all services. If you have `REDIS_URL` from a local `.env`, remove it or override with `redis://redis:6379/0` so Celery can reach Redis.
+
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `POSTGRES_URL` | Yes | PostgreSQL connection string (e.g. Supabase: `postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com:6543/postgres`) |

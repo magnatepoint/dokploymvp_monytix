@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+
+from app.core.audit import AuditAction, persist_audit
+from app.dependencies.database import get_db_pool
 
 from .dependencies import get_current_user
 from .models import AuthenticatedUser, LoginRequest, LoginResponse, SessionResponse
@@ -24,4 +27,22 @@ async def session(user: AuthenticatedUser = Depends(get_current_user)) -> Sessio
         email=user.email,
         role=user.role,
     )
+
+
+@router.post("/export-data", summary="Request data export (GDPR)")
+async def export_data(
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool=Depends(get_db_pool),
+):
+    """Request export of user data. Persists to audit log."""
+    client_host = request.client.host if request.client else None
+    await persist_audit(
+        pool,
+        AuditAction.DATA_EXPORT,
+        user.user_id,
+        details={"email": user.email},
+        ip_address=client_host,
+    )
+    return {"status": "requested", "message": "Data export will be processed. You will receive a download link via email."}
 

@@ -4,18 +4,23 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+# Use CELERY_BROKER_URL if set (e.g. redis://redis:6379/0 in Docker), else REDIS_URL
+broker_url = str(settings.celery_broker_url) if settings.celery_broker_url else str(settings.redis_url)
+backend_url = str(settings.redis_url)  # Result backend can stay on REDIS_URL
+
 celery_app = Celery(
     "mvp",
-    broker=str(settings.redis_url),
-    backend=str(settings.redis_url),
+    broker=broker_url,
+    backend=backend_url,
 )
 
+# Use /tmp for beat schedule - /app/data may have permission issues when volume-mounted
 celery_app.conf.update(
     task_default_queue="spendsense",
     task_ignore_result=True,
     task_serializer="json",
     result_serializer="json",
-    beat_schedule_filename="/app/data/celerybeat-schedule",
+    beat_schedule_filename="/tmp/celerybeat-schedule",
     beat_schedule={
         "renew-gmail-watches": {
             "task": "gmail.renew_watches",

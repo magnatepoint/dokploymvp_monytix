@@ -6,7 +6,7 @@ from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.auth.dependencies import get_current_user
 from app.auth.models import AuthenticatedUser
@@ -121,6 +121,42 @@ async def update_life_context(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update life context",
+        ) from e
+
+
+class CreateGoalRequest(BaseModel):
+    """Simple request to create a single goal."""
+
+    goal_category: str = Field(..., description="e.g. emergency, vacation, debt")
+    goal_name: str = Field(..., description="e.g. Emergency Fund, Vacation")
+    estimated_cost: float = Field(..., gt=0, description="Target amount in INR")
+    target_date: date | None = None
+    current_savings: float = Field(default=0.0, ge=0)
+
+
+@router.post("", response_model=dict, summary="Create a single goal")
+async def create_goal(
+    payload: CreateGoalRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    service: GoalsService = Depends(get_service),
+) -> dict:
+    """Create a single goal. For quick add from mobile."""
+    try:
+        goals_data = [{
+            "goal_category": payload.goal_category,
+            "goal_name": payload.goal_name,
+            "estimated_cost": payload.estimated_cost,
+            "target_date": payload.target_date.isoformat() if payload.target_date else None,
+            "current_savings": payload.current_savings,
+            "importance": 3,
+        }]
+        created = await service.create_goals(safe_user_id(user), goals_data)
+        return {"status": "created", "goal_id": created[0]["goal_id"] if created else None}
+    except Exception as e:
+        logger.error(f"Failed to create goal: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
         ) from e
 
 

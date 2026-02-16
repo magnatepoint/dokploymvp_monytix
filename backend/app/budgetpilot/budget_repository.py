@@ -208,13 +208,13 @@ class BudgetRepository:
             SELECT 
                 date_trunc('month', txn_date) AS month,
                 SUM(CASE WHEN txn_type = 'income' AND direction = 'credit' THEN amount ELSE 0 END) AS income_amt,
-                SUM(CASE WHEN txn_type = 'needs' AND direction = 'debit' THEN amount ELSE 0 END) AS needs_amt,
-                SUM(CASE WHEN txn_type = 'wants' AND direction = 'debit' THEN amount ELSE 0 END) AS wants_amt,
+                SUM(CASE WHEN txn_type IN ('needs','debt','protection','tax') AND direction = 'debit' THEN amount ELSE 0 END) AS needs_amt,
+                SUM(CASE WHEN txn_type IN ('wants','charity','fees','business') AND direction = 'debit' THEN amount ELSE 0 END) AS wants_amt,
                 SUM(CASE WHEN txn_type = 'assets' AND direction = 'debit' THEN amount ELSE 0 END) AS assets_amt
             FROM spendsense.vw_txn_effective
             WHERE user_id = $1
               AND txn_date >= date_trunc('month', CURRENT_DATE) - ($2 || ' months')::INTERVAL
-              AND txn_date < date_trunc('month', CURRENT_DATE)
+              AND txn_date <= CURRENT_DATE
             GROUP BY date_trunc('month', txn_date)
             ORDER BY month DESC
             """,

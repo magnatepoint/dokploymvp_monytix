@@ -46,7 +46,7 @@ export default function Home() {
   const validateSessionWithBackend = async (session: Session) => {
     try {
       // Validate API URL - should not contain paths and should point to API domain
-      const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.monytix.ai'
+      const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai'
       let API_BASE_URL = rawApiUrl.split('/').slice(0, 3).join('/') // Remove any paths
       
       // Check if hostname is wrong (points to frontend instead of API)
@@ -57,9 +57,9 @@ export default function Home() {
       if (isWrongHostname) {
         console.error('[Debug] ⚠️ CRITICAL: NEXT_PUBLIC_API_URL points to frontend domain!')
         console.error('[Debug] Current value:', rawApiUrl)
-        console.error('[Debug] Using fallback: https://api.monytix.ai')
+        console.error('[Debug] Using fallback: https://backend.monytix.ai')
         console.error('[Debug] Fix in Cloudflare Pages → Settings → Environment Variables')
-        API_BASE_URL = 'https://api.monytix.ai'
+        API_BASE_URL = 'https://backend.monytix.ai'
       }
       
       console.log('[Debug] API URL:', API_BASE_URL)
@@ -85,7 +85,7 @@ export default function Home() {
       // Don't sign out on network errors - might be temporary connectivity issue
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
         console.error('Network error - check if NEXT_PUBLIC_API_URL is set correctly in Cloudflare Pages environment variables')
-        console.error('Current API URL:', process.env.NEXT_PUBLIC_API_URL || 'https://api.monytix.ai (default)')
+        console.error('Current API URL:', process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai (default)')
       }
     }
   }

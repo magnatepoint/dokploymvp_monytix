@@ -29,6 +29,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,7 +47,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.monytix.data.GoalProgressItem
@@ -68,6 +73,7 @@ fun GoalTrackerScreen(
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(GtTab.OVERVIEW) }
     val colorScheme = MaterialTheme.colorScheme
+    var showAddGoal by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -84,7 +90,16 @@ fun GoalTrackerScreen(
                 }
             )
         },
-        containerColor = colorScheme.background
+        containerColor = colorScheme.background,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showAddGoal = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add goal")
+            }
+        }
     ) { innerPadding ->
         Column(
             modifier = modifier
@@ -119,6 +134,16 @@ fun GoalTrackerScreen(
                 }
             }
         }
+    }
+
+    if (showAddGoal) {
+        AddGoalDialog(
+            onDismiss = { showAddGoal = false },
+            onSubmit = { cat, name, cost, targetDate, savings ->
+                viewModel.createGoal(cat, name, cost, targetDate, savings)
+                showAddGoal = false
+            }
+        )
     }
 }
 
@@ -669,6 +694,155 @@ private fun EmptyState(title: String, subtitle: String, onRetry: () -> Unit) {
 }
 
 private data class AiInsight(val id: String, val title: String, val message: String, val type: String)
+
+@Composable
+private fun AddGoalDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (String, String, Double, String?, Double) -> Unit
+) {
+    val categories = listOf(
+        "Emergency" to "Emergency Fund",
+        "Travel" to "Vacation / Travel",
+        "Debt" to "Credit Card Paydown",
+        "Insurance" to "Term Insurance",
+        "Housing" to "Home Down Payment",
+        "Education" to "Children Education",
+        "Retirement" to "Retirement Corpus",
+        "Lifestyle" to "New Smartphone",
+        "Custom" to "Custom Goal (Medium)"
+    )
+    var selectedCategoryIndex by remember { mutableStateOf(0) }
+    var goalName by remember { mutableStateOf(categories[0].second) }
+    var estimatedCost by remember { mutableStateOf("") }
+    var targetDate by remember { mutableStateOf("") }
+    var currentSavings by remember { mutableStateOf("0") }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth()
+            ) {
+                Text(
+                    "Add Goal",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Category",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    categories.forEachIndexed { idx, (cat, name) ->
+                        val selected = selectedCategoryIndex == idx
+                        TextButton(
+                            onClick = {
+                                selectedCategoryIndex = idx
+                                goalName = name
+                            },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        ) {
+                            Text(cat, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = goalName,
+                    onValueChange = { goalName = it },
+                    label = { Text("Goal name", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = estimatedCost,
+                    onValueChange = { estimatedCost = it },
+                    label = { Text("Target amount (₹)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = targetDate,
+                    onValueChange = { targetDate = it },
+                    label = { Text("Target date (YYYY-MM-DD, optional)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = currentSavings,
+                    onValueChange = { currentSavings = it },
+                    label = { Text("Current savings (₹)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    }
+                    Button(
+                        onClick = {
+                            val cost = estimatedCost.toDoubleOrNull() ?: 0.0
+                            val savings = currentSavings.toDoubleOrNull() ?: 0.0
+                            val (cat, _) = categories[selectedCategoryIndex]
+                            if (goalName.isNotBlank() && cost > 0) {
+                                val dateStr = targetDate.takeIf { it.isNotBlank() }
+                                onSubmit(cat, goalName, cost, dateStr, savings)
+                            }
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Add")
+                    }
+                }
+            }
+        }
+    }
+}
 
 private fun formatCurrency(amount: Double): String {
     val abs = kotlin.math.abs(amount)

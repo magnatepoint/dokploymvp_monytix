@@ -92,6 +92,33 @@ async def get_committed_budget(
     return {"status": "committed", "budget": committed}
 
 
+@router.get("/state", summary="Get unified budget state (committed + actual + deviation + plans)")
+async def get_budget_state(
+    month: date | None = None,
+    user: AuthenticatedUser = Depends(get_current_user),
+    service: BudgetService = Depends(get_service),
+) -> dict[str, Any]:
+    """
+    Get full budget state for the month. Refreshes aggregate before returning.
+    Returns: month, committed_plan, actual, deviation, plans (with scores), last_updated_at.
+    """
+    return await service.get_budget_state(UUID(user.user_id), month)
+
+
+@router.post("/recalculate", summary="Force recalculate budget aggregate for current month")
+async def recalculate_budget(
+    month: date | None = None,
+    user: AuthenticatedUser = Depends(get_current_user),
+    pool: Pool = Depends(get_db_pool),
+) -> dict[str, str]:
+    """Force refresh of budget aggregate. Use when data seems stale."""
+    from .transaction_hook import refresh_budget_aggregate
+    m = month or date.today().replace(day=1)
+    async with pool.acquire() as conn:
+        await refresh_budget_aggregate(conn, user.user_id, m)
+    return {"status": "ok", "message": f"Aggregate refreshed for {m.strftime('%Y-%m')}"}
+
+
 @router.get("/variance", summary="Get budget variance (actuals vs planned)")
 async def get_budget_variance(
     month: date | None = None,

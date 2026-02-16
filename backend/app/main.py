@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from .auth import routes as auth_routes
+from .routes import config as config_routes
 from .routes import health
 from .routers import ws as ws_routes
 from .spendsense import routes as spendsense_routes
@@ -172,6 +173,7 @@ def create_app() -> FastAPI:
 
     # Include health router at root and /health
     application.include_router(health.router, tags=["health"])
+    application.include_router(config_routes.router)
     application.include_router(health.router, prefix="/health", tags=["health"])
     application.include_router(auth_routes.router)
     application.include_router(spendsense_routes.router)

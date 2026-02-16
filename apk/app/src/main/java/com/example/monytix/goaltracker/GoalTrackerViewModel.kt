@@ -91,6 +91,36 @@ class GoalTrackerViewModel : ViewModel() {
         _uiState.update { it.copy(error = null) }
     }
 
+    fun createGoal(
+        goalCategory: String,
+        goalName: String,
+        estimatedCost: Double,
+        targetDate: String?,
+        currentSavings: Double
+    ) {
+        viewModelScope.launch {
+            val token = getAccessToken() ?: return@launch
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            val result = withContext(Dispatchers.IO) {
+                BackendApi.createGoal(token, goalCategory, goalName, estimatedCost, targetDate, currentSavings)
+            }
+            result.fold(
+                onSuccess = {
+                    _uiState.update { it.copy(isLoading = false) }
+                    loadData()
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = e.message ?: "Failed to add goal"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
     fun refresh() {
         loadData()
     }

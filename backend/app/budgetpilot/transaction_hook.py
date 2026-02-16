@@ -72,10 +72,14 @@ async def refresh_budget_aggregate(
             WHERE c.user_id = $1 AND c.month = (SELECT month FROM m)
         ),
         joined AS (
-            SELECT a.user_id, a.month, a.income_amt, a.needs_amt, a.wants_amt, a.assets_amt,
+            SELECT p.user_id, p.month,
+                   COALESCE(a.income_amt, 0) AS income_amt,
+                   COALESCE(a.needs_amt, 0) AS needs_amt,
+                   COALESCE(a.wants_amt, 0) AS wants_amt,
+                   COALESCE(a.assets_amt, 0) AS assets_amt,
                    p.alloc_needs_pct, p.alloc_wants_pct, p.alloc_assets_pct
-            FROM actuals a
-            LEFT JOIN plan p ON p.user_id = a.user_id AND p.month = a.month
+            FROM plan p
+            LEFT JOIN actuals a ON a.user_id = p.user_id AND a.month = p.month
         ),
         planned AS (
             SELECT j.*,

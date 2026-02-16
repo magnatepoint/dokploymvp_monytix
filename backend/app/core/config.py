@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     )
     postgres_dsn: PostgresDsn = Field(alias="POSTGRES_URL")
     redis_url: RedisDsn = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    celery_broker_url: RedisDsn | None = Field(default=None, alias="CELERY_BROKER_URL")
     gmail_client_id: str | None = Field(default=None, alias="GMAIL_CLIENT_ID")
     gmail_client_secret: str | None = Field(default=None, alias="GMAIL_CLIENT_SECRET")
     gmail_redirect_uri: AnyHttpUrl | None = Field(default=None, alias="GMAIL_REDIRECT_URI")
