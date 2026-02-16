@@ -526,6 +526,32 @@ object BackendApi {
             Result.failure(e)
         }
     }
+
+    suspend fun applyBudgetAdjustment(
+        accessToken: String,
+        shiftFrom: String,
+        shiftTo: String,
+        pct: Double,
+        month: String? = null
+    ): Result<BudgetApplyAdjustmentResponse> = withContext(Dispatchers.IO) {
+        try {
+            val monthVal = if (month != null && month.isNotBlank()) "${month}-01" else null
+            val body = BudgetApplyAdjustmentRequest(
+                shift_from = shiftFrom,
+                shift_to = shiftTo,
+                pct = pct,
+                month = monthVal
+            )
+            val response = client.post("$budgetBase/apply-adjustment") {
+                header("Authorization", "Bearer $accessToken")
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(body)
+            }.body<BudgetApplyAdjustmentResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 @kotlinx.serialization.Serializable
@@ -740,6 +766,23 @@ data class UpdatedGoalItem(
 )
 
 @kotlinx.serialization.Serializable
+data class BudgetStateUpdate(
+    val budget_state_updated: Boolean = false,
+    val actual_split: Map<String, Double> = emptyMap(),
+    val deviation: Map<String, Double> = emptyMap(),
+    val autopilot_suggestion: AutopilotSuggestion? = null,
+    val alerts: List<String> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class AutopilotSuggestion(
+    val shift_from: String = "",
+    val shift_to: String = "",
+    val pct: Double = 0.0,
+    val message: String = ""
+)
+
+@kotlinx.serialization.Serializable
 data class TransactionCreateResponse(
     val txn_id: String = "",
     val txn_date: String = "",
@@ -751,7 +794,8 @@ data class TransactionCreateResponse(
     val amount: Double = 0.0,
     val direction: String = "",
     val confidence: Double? = null,
-    val updated_goals: List<UpdatedGoalItem> = emptyList()
+    val updated_goals: List<UpdatedGoalItem> = emptyList(),
+    val budget_state: BudgetStateUpdate? = null
 )
 
 @kotlinx.serialization.Serializable
@@ -982,4 +1026,19 @@ data class BudgetVariance(
 data class BudgetVarianceResponse(
     val status: String = "",
     val aggregate: BudgetVariance? = null
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetApplyAdjustmentRequest(
+    val shift_from: String,
+    val shift_to: String = "savings",
+    val pct: Double,
+    val month: String? = null
+)
+
+@kotlinx.serialization.Serializable
+data class BudgetApplyAdjustmentResponse(
+    val status: String = "",
+    val reason: String? = null,
+    val budget: CommittedBudget? = null
 )

@@ -347,6 +347,15 @@ async def _ingest(
                         f"Failed to process transactions for goals (non-fatal): {goal_error}",
                         exc_info=True,
                     )
+                # Refresh budget aggregate for Autopilot
+                try:
+                    from app.budgetpilot.transaction_hook import refresh_budget_aggregate
+                    await refresh_budget_aggregate(conn, user_id)
+                except Exception as budget_error:
+                    logger.warning(
+                        f"Failed to refresh budget aggregate (non-fatal): {budget_error}",
+                        exc_info=True,
+                    )
             logger.info(f"Enriched {enriched_count} transactions for batch {batch_id}")
             if enriched_count == 0:
                 logger.warning(f"No transactions were enriched for batch {batch_id}. This may indicate no parsed transactions or enrichment rule issues.")

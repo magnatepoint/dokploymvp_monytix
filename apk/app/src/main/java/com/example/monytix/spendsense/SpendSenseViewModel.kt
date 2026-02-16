@@ -14,6 +14,7 @@ import com.example.monytix.data.TransactionCreateRequest
 import io.github.jan.supabase.auth.auth
 import com.example.monytix.data.TransactionCreateResponse
 import com.example.monytix.data.TransactionRecordResponse
+import com.example.monytix.budgetpilot.BudgetUpdateCache
 import com.example.monytix.goaltracker.GoalUpdateCache
 import com.example.monytix.data.TransactionUpdateRequest
 import kotlinx.coroutines.Dispatchers
@@ -283,8 +284,11 @@ class SpendSenseViewModel : ViewModel() {
             result.fold(
                 onSuccess = { resp ->
                     GoalUpdateCache.setFromTransactionCreate(resp.updated_goals)
+                    resp.budget_state?.let { BudgetUpdateCache.setFromTransactionCreate(it) }
                     val toast = resp.updated_goals.firstOrNull()?.let { g ->
                         "₹${g.delta.toInt()} added to ${g.goal_name}"
+                    } ?: resp.budget_state?.autopilot_suggestion?.message?.takeIf {
+                        resp.budget_state?.budget_state_updated == true && resp.budget_state?.alerts?.isNotEmpty() == true
                     }
                     _uiState.update {
                         it.copy(

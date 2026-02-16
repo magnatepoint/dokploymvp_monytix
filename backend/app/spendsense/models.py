@@ -57,8 +57,18 @@ class UpdatedGoalItem(BaseModel):
     reason: str
 
 
+class BudgetStateUpdate(BaseModel):
+    """Budget state updated by a transaction - for Autopilot UI."""
+
+    budget_state_updated: bool = True
+    actual_split: dict[str, float] = Field(default_factory=dict)  # needs, wants, savings pct
+    deviation: dict[str, float] = Field(default_factory=dict)  # needs, wants, savings pct delta
+    autopilot_suggestion: dict[str, Any] | None = None  # shift_from, shift_to, pct, message
+    alerts: list[str] = Field(default_factory=list)
+
+
 class TransactionCreateResponse(BaseModel):
-    """Response for POST /transactions - includes transaction + affected goals."""
+    """Response for POST /transactions - includes transaction + affected goals + budget state."""
 
     txn_id: str
     txn_date: date
@@ -71,6 +81,7 @@ class TransactionCreateResponse(BaseModel):
     direction: str
     confidence: float | None = None
     updated_goals: list[UpdatedGoalItem] = Field(default_factory=list)
+    budget_state: BudgetStateUpdate | None = None
 
 
 class TransactionListResponse(BaseModel):

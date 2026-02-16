@@ -9,6 +9,7 @@ from app.auth.models import AuthenticatedUser
 from app.dependencies.database import get_db_pool
 from .models import (
     AccountsListResponse,
+    BudgetStateUpdate,
     SourceType,
     SpendSenseKPI,
     StagingRecord,
@@ -204,6 +205,17 @@ async def create_transaction(
         except Exception as e:
             logger.warning(f"Goal processing for txn {result.txn_id} failed (non-fatal): {e}")
 
+        # Process for budget state (Autopilot)
+        budget_state = None
+        try:
+            from app.budgetpilot.transaction_hook import process_transaction_for_budget_by_id
+            async with pool.acquire() as conn:
+                state = await process_transaction_for_budget_by_id(conn, user.user_id, result.txn_id)
+                if state:
+                    budget_state = BudgetStateUpdate(**state)
+        except Exception as e:
+            logger.warning(f"Budget processing for txn {result.txn_id} failed (non-fatal): {e}")
+
         return TransactionCreateResponse(
             txn_id=result.txn_id,
             txn_date=result.txn_date,
@@ -216,6 +228,7 @@ async def create_transaction(
             direction=result.direction,
             confidence=None,
             updated_goals=updated_goals,
+            budget_state=budget_state,
         )
     except ValueError as exc:
         logger.warning(f"Validation error creating transaction for user {user.user_id}: {exc}")

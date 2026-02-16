@@ -204,3 +204,91 @@ class BudgetService:
             repo = BudgetRepository(conn)
             return await repo.get_month_aggregate(user_id, month)
 
+    async def apply_adjustment(
+        self,
+        user_id: UUID,
+        month: date,
+        shift_from: str,
+        shift_to: str,
+        pct: float,
+    ) -> dict[str, Any]:
+        """
+        Apply Autopilot suggestion: shift pct from shift_from to shift_to.
+        Guardrails: max 5% per adjustment, never reduce needs below 45%.
+        """
+        async with self.pool.acquire() as conn:
+            repo = BudgetRepository(conn)
+            commit = await repo.get_user_commit(user_id, month)
+            if not commit:
+                return {"status": "no_commitment", "budget": None}
+
+            alloc_needs = float(commit["alloc_needs_pct"])
+            alloc_wants = float(commit["alloc_wants_pct"])
+            alloc_assets = float(commit["alloc_assets_pct"])
+
+            # Guardrails
+            pct = min(5.0, max(0.5, pct)) / 100.0  # clamp to 0.5-5%
+            shift_from = shift_from.lower()
+            shift_to = shift_to.lower() if shift_to else "savings"
+
+            if shift_from == "needs":
+                new_needs = alloc_needs - pct
+                if new_needs < 0.45:
+                    return {
+                        "status": "rejected",
+                        "reason": "Cannot reduce needs below 45%",
+                        "budget": await self.get_committed_budget(user_id, month),
+                    }
+                alloc_needs = new_needs
+            elif shift_from == "wants":
+                alloc_wants = max(0.05, alloc_wants - pct)
+            else:
+                return {"status": "rejected", "reason": f"Invalid shift_from: {shift_from}"}
+
+            if shift_to in ("savings", "assets"):
+                alloc_assets += pct
+
+            # Normalize to 1.0
+            total = alloc_needs + alloc_wants + alloc_assets
+            alloc_needs /= total
+            alloc_wants /= total
+            alloc_assets /= total
+
+            await repo.commit_budget(
+                user_id,
+                month,
+                str(commit["plan_code"]),
+                alloc_needs,
+                alloc_wants,
+                alloc_assets,
+                notes=f"Autopilot: +{pct*100:.0f}% {shift_to} from {shift_from}",
+            )
+
+            # Refresh goal allocations
+            spending = await repo.get_user_spending_pattern(user_id, months_back=3)
+            monthly_income = spending["avg_income"] if spending else 0
+            if monthly_income <= 0:
+                income_row = await conn.fetchrow(
+                    """
+                    SELECT SUM(amount) AS income_amt
+                    FROM spendsense.vw_txn_effective
+                    WHERE user_id = $1 AND txn_type = 'income' AND direction = 'credit'
+                      AND date_trunc('month', txn_date) = $2
+                    """,
+                    user_id,
+                    month,
+                )
+                monthly_income = float(income_row["income_amt"] or 0) if income_row else 0
+
+            goal_alloc_list = await self._compute_goal_allocations(
+                repo, user_id, month, monthly_income, alloc_assets, None
+            )
+            await repo.set_goal_allocations(user_id, month, goal_alloc_list)
+
+            # Refresh aggregate
+            from .transaction_hook import refresh_budget_aggregate
+            await refresh_budget_aggregate(conn, str(user_id), month)
+
+            budget = await self.get_committed_budget(user_id, month)
+            return {"status": "applied", "budget": budget}
+

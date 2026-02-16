@@ -28,6 +28,15 @@ class BudgetCommitRequest(BaseModel):
     notes: str | None = None
 
 
+class ApplyAdjustmentRequest(BaseModel):
+    """Request to apply Autopilot suggested adjustment (Monitor mode: manual apply)."""
+
+    shift_from: str  # "needs" | "wants"
+    shift_to: str = "savings"
+    pct: float  # e.g. 3.0 for 3%
+    month: date | None = None
+
+
 @router.get("/recommendations", summary="Get budget recommendations")
 async def get_recommendations(
     month: date | None = None,
@@ -102,4 +111,25 @@ async def get_budget_variance(
     if not aggregate:
         return {"status": "no_data", "aggregate": None}
     return {"status": "ok", "aggregate": aggregate}
+
+
+@router.post("/apply-adjustment", summary="Apply suggested budget adjustment (Monitor mode)")
+async def apply_adjustment(
+    payload: ApplyAdjustmentRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+    service: BudgetService = Depends(get_service),
+) -> dict[str, Any]:
+    """
+    Apply Autopilot suggestion: shift pct from one bucket to another.
+    Guardrails: max 5% per adjustment, never reduce needs below 45%.
+    """
+    month = payload.month or date.today().replace(day=1)
+    result = await service.apply_adjustment(
+        UUID(user.user_id),
+        month,
+        payload.shift_from,
+        payload.shift_to,
+        payload.pct,
+    )
+    return result
 
