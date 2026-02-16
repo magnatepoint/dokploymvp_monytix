@@ -1092,6 +1092,15 @@ data class BudgetVariance(
 )
 
 @kotlinx.serialization.Serializable
+data class BudgetGoalImpact(
+    val goal_id: String = "",
+    val goal_name: String = "",
+    val status: String = "",
+    val planned_amount: Double = 0.0,
+    val shortfall: Double? = null
+)
+
+@kotlinx.serialization.Serializable
 data class BudgetStateResponse(
     val month: String = "",
     val committed_plan: BudgetStateCommittedPlan? = null,
@@ -1099,6 +1108,7 @@ data class BudgetStateResponse(
     val actual: BudgetStateActual? = null,
     val deviation: BudgetStateDeviation? = null,
     val plans: List<BudgetStatePlan> = emptyList(),
+    val goal_impact: List<BudgetGoalImpact> = emptyList(),
     val last_updated_at: String? = null
 )
 

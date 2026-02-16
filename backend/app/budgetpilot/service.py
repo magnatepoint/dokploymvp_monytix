@@ -245,6 +245,7 @@ class BudgetService:
         if not commit:
             return {
                 "month": month.strftime("%Y-%m"),
+                "goal_impact": [],
                 "committed_plan": None,
                 "actual": None,
                 "deviation": None,
@@ -267,8 +268,11 @@ class BudgetService:
         }
 
         if not aggregate or aggregate.get("income_amt", 0) <= 0:
+            allocations = await repo.get_goal_allocations(user_id, month) if commit else []
+            goal_impact = [{"goal_id": str(a.get("goal_id", "")), "goal_name": a.get("goal_name") or "Goal", "status": "on_track", "planned_amount": float(a.get("planned_amount", 0) or 0), "shortfall": None} for a in allocations[:5]]
             return {
                 "month": month.strftime("%Y-%m"),
+                "goal_impact": goal_impact,
                 "committed_plan": {
                     "plan_id": commit["plan_code"],
                     "target": target,
@@ -313,8 +317,26 @@ class BudgetService:
             "savings": round(actual_savings_pct - target["savings"], 1),
         }
 
+        # Goal impact: which goals are on track vs at risk from savings shortfall
+        goal_impact = []
+        allocations = await repo.get_goal_allocations(user_id, month)
+        planned_savings = float(aggregate.get("planned_assets_amt", 0) or 0)
+        savings_shortfall = max(0, planned_savings - savings_amt)
+        for alloc in allocations[:5]:
+            goal_name = alloc.get("goal_name") or "Goal"
+            planned = float(alloc.get("planned_amount", 0) or 0)
+            status = "on_track" if savings_shortfall <= 0 else "at_risk"
+            goal_impact.append({
+                "goal_id": str(alloc.get("goal_id", "")),
+                "goal_name": goal_name,
+                "status": status,
+                "planned_amount": round(planned, 2),
+                "shortfall": round(savings_shortfall, 2) if status == "at_risk" else None,
+            })
+
         return {
             "month": month.strftime("%Y-%m"),
+            "goal_impact": goal_impact,
             "committed_plan": {
                 "plan_id": commit["plan_code"],
                 "target": target,

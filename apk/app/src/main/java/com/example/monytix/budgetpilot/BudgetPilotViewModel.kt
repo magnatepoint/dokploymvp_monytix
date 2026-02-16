@@ -126,7 +126,7 @@ class BudgetPilotViewModel : ViewModel() {
                         val targetWants = (cp.target["wants"] ?: 0.0) / 100.0 * income
                         val targetSavings = (cp.target["savings"] ?: 0.0) / 100.0 * income
                         BudgetVariance(
-                            income_amt = if (income > 0) income else 1.0,  // avoid div by zero
+                            income_amt = income,
                             needs_amt = actual?.needs_amt ?: 0.0,
                             planned_needs_amt = targetNeeds,
                             variance_needs_amt = (actual?.needs_amt ?: 0.0) - targetNeeds,

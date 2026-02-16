@@ -3,7 +3,9 @@ package com.example.monytix.budgetpilot
 import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,11 +29,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,17 +48,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.monytix.data.BudgetGoalImpact
 import com.example.monytix.data.BudgetRecommendation
 import com.example.monytix.data.BudgetStateResponse
 import com.example.monytix.data.CommittedBudget
 import com.example.monytix.data.BudgetVariance
+import com.example.monytix.ui.theme.AccentPrimary
 import com.example.monytix.ui.theme.BannerPurple
 import com.example.monytix.ui.theme.ChartRed
 import com.example.monytix.ui.theme.ChartBlue
 import com.example.monytix.ui.theme.ChartGreen
 import com.example.monytix.ui.theme.ChartOrange
 import com.example.monytix.ui.theme.GlassCard
+
+// Fintech layout constants
+private val ScreenPaddingH = 20.dp
+private val ScreenPaddingTop = 12.dp
+private val SectionSpacing = 20.dp
+private val CardSpacing = 12.dp
+private val CardPadding = 16.dp
+private val CardRadius = 20.dp
+private val ChipRadius = 14.dp
+private val ProgressBarRadius = 10.dp
+private val CardBorderWidth = 1.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +83,7 @@ fun BudgetPilotScreen(
     val uiState by viewModel.uiState.collectAsState()
     val colorScheme = MaterialTheme.colorScheme
     var showAddBudget by remember { mutableStateOf(false) }
+    var showPlanToAchieve by remember { mutableStateOf<BudgetRecommendation?>(null) }
 
     LaunchedEffect(Unit) {
         BudgetUpdateCache.consume()?.let { viewModel.refresh() }
@@ -75,7 +92,24 @@ fun BudgetPilotScreen(
     Scaffold(
         topBar = {
             androidx.compose.material3.TopAppBar(
-                title = { Text("BudgetPilot", color = colorScheme.onBackground) },
+                title = {
+                    Column {
+                        Text(
+                            "BudgetPilot",
+                            color = colorScheme.onBackground,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 22.sp
+                            )
+                        )
+                        Text(
+                            formatMonthLabel(uiState.selectedMonth),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 12.sp,
+                            color = colorScheme.onBackground.copy(alpha = 0.7f)
+                        )
+                    }
+                },
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
                     containerColor = colorScheme.background,
                     titleContentColor = colorScheme.onBackground
@@ -89,13 +123,13 @@ fun BudgetPilotScreen(
         },
         containerColor = colorScheme.background,
         floatingActionButton = {
-            FloatingActionButton(
+            androidx.compose.material3.ExtendedFloatingActionButton(
                 onClick = { showAddBudget = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add budget")
-            }
+                containerColor = AccentPrimary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("Add Budget", style = MaterialTheme.typography.labelLarge) }
+            )
         }
     ) { innerPadding ->
         PullToRefreshBox(
@@ -106,46 +140,41 @@ fun BudgetPilotScreen(
             modifier = modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(top = ScreenPaddingTop, start = ScreenPaddingH, end = ScreenPaddingH),
+            verticalArrangement = Arrangement.spacedBy(CardSpacing)
         ) {
-            item {
-                WelcomeBanner(username = uiState.userEmail)
+            // 1. Hero Status Card (dominant)
+            if (uiState.committedBudget != null && uiState.deviation != null) {
+                item {
+                    StatusHeroCard(
+                        deviation = uiState.deviation!!,
+                        variance = uiState.variance,
+                        autopilotSuggestion = uiState.autopilotSuggestion,
+                        isApplying = uiState.isApplyingAdjustment,
+                        onApply = { s -> viewModel.applyAdjustment(s.shiftFrom, s.shiftTo, s.pct) }
+                    )
+                }
             }
+            // 2. Month Snapshot Card
             item {
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-            item {
-                Text(
-                    text = "Smart budget recommendations tailored to your spending patterns and goals",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                MonthSnapshotCard(
+                    variance = uiState.variance,
+                    month = uiState.selectedMonth
                 )
             }
-            if (uiState.committedBudget != null && uiState.variance != null) {
+            // Chips row under snapshot
+            if (uiState.deviation != null && uiState.committedBudget != null && uiState.variance != null) {
                 item {
-                    QuickStatsRow(variance = uiState.variance!!)
-                }
-            }
-            if (uiState.deviation != null && uiState.committedBudget != null) {
-                item {
-                    DeviationStrip(
+                    StatusChipRow(
                         deviation = uiState.deviation!!,
-                        suggestion = uiState.autopilotSuggestion,
+                        variance = uiState.variance,
+                        autopilotSuggestion = uiState.autopilotSuggestion,
                         isApplying = uiState.isApplyingAdjustment,
-                        onFixClick = { s -> viewModel.applyAdjustment(s.shiftFrom, s.shiftTo, s.pct) }
+                        onApply = { s -> viewModel.applyAdjustment(s.shiftFrom, s.shiftTo, s.pct) }
                     )
                 }
             }
-            if (uiState.autopilotSuggestion != null && uiState.committedBudget != null) {
-                item {
-                    SuggestedReformCard(
-                        suggestion = uiState.autopilotSuggestion!!,
-                        isApplying = uiState.isApplyingAdjustment,
-                        onApply = { viewModel.applyAdjustment(it.shiftFrom, it.shiftTo, it.pct) }
-                    )
-                }
-            }
+            // 3. Plan Card (target vs actual)
             item {
                 CommittedBudgetSection(
                     committedBudget = uiState.committedBudget,
@@ -157,12 +186,31 @@ fun BudgetPilotScreen(
                     onRecalculate = { viewModel.recalculate() }
                 )
             }
+            // 4. Action Engine Card
+            item {
+                NextBestActionCard(
+                    suggestion = uiState.autopilotSuggestion,
+                    variance = uiState.variance,
+                    committedBudget = uiState.committedBudget,
+                    isApplying = uiState.isApplyingAdjustment,
+                    hasRealData = hasRealData(uiState.variance),
+                    onApply = { viewModel.applyAdjustment(it.shiftFrom, it.shiftTo, it.pct) }
+                )
+            }
+            // 5. Goals Impact Strip (below forecast/plan)
+            val goalImpact = uiState.budgetState?.goal_impact?.takeIf { it.isNotEmpty() }
+            if (goalImpact != null) {
+                item {
+                    GoalsImpactStrip(goalImpact = goalImpact)
+                }
+            }
+            // 6. Explore Alternatives (2 cards + See all)
             item {
                 Text(
-                    text = if (uiState.committedBudget != null) "Other Recommendations" else "Recommended Budget Plans",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = "Explore other plans",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                 )
             }
             if (uiState.isLoadingRecommendations) {
@@ -188,13 +236,25 @@ fun BudgetPilotScreen(
                     EmptyRecommendationsState()
                 }
             } else {
-                items(uiState.recommendations) { rec ->
+                items(uiState.recommendations.take(2)) { rec ->
                     RecommendationCard(
                         recommendation = rec,
                         isCommitted = uiState.committedBudget?.plan_code == rec.plan_code,
                         isCommitting = uiState.isCommitting && uiState.committingPlanCode == rec.plan_code,
+                        variance = uiState.variance,
+                        onPreview = { showPlanToAchieve = rec },
                         onCommit = { viewModel.commitBudget(rec.plan_code) }
                     )
+                }
+                if (uiState.recommendations.size > 2) {
+                    item {
+                        TextButton(
+                            onClick = { showAddBudget = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("See all (${uiState.recommendations.size} plans)", color = AccentPrimary)
+                        }
+                    }
                 }
             }
             item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -202,6 +262,19 @@ fun BudgetPilotScreen(
         }
     }
 
+    showPlanToAchieve?.let { plan ->
+        PlanToAchieveBottomSheet(
+            plan = plan,
+            variance = uiState.variance,
+            autopilotSuggestion = uiState.autopilotSuggestion,
+            onDismiss = { showPlanToAchieve = null },
+            onCommit = {
+                viewModel.commitBudget(plan.plan_code)
+                showPlanToAchieve = null
+            },
+            isCommitting = uiState.isCommitting
+        )
+    }
     if (showAddBudget) {
         AddBudgetDialog(
             plans = uiState.recommendations.ifEmpty { defaultBudgetPlans() },
@@ -217,45 +290,401 @@ fun BudgetPilotScreen(
     }
 }
 
+private fun formatMonthLabel(month: String): String {
+    if (month.isBlank()) return ""
+    return try {
+        val parts = month.split("-")
+        if (parts.size >= 2) {
+            val months = listOf("", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+            val m = parts[1].toIntOrNull()?.coerceIn(1, 12) ?: 0
+            val y = parts[0].take(4)
+            if (m > 0) "${months[m]} $y" else month
+        } else month
+    } catch (_: Exception) { month }
+}
+
+private fun hasRealData(variance: BudgetVariance?): Boolean {
+    val income = variance?.income_amt ?: 0.0
+    val spend = (variance?.needs_amt ?: 0.0) + (variance?.wants_amt ?: 0.0)
+    return income >= 100 || spend >= 100
+}
+
 @Composable
-private fun DeviationStrip(
+private fun GoalsImpactStrip(
+    goalImpact: List<BudgetGoalImpact>,
+    onGoalTap: (String) -> Unit = {}
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = GlassCard),
+        shape = RoundedCornerShape(CardRadius),
+        border = BorderStroke(CardBorderWidth, AccentPrimary.copy(alpha = 0.2f))
+    ) {
+        Column(modifier = Modifier.padding(CardPadding)) {
+            Text(
+                "Goal Impact",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+            )
+            Spacer(Modifier.height(12.dp))
+            goalImpact.forEach { g ->
+                val isAtRisk = g.status == "at_risk"
+                val statusText = when (g.status) {
+                    "at_risk" -> "At risk"
+                    else -> "On track"
+                }
+                val detail = when {
+                    isAtRisk && g.shortfall != null && g.shortfall > 0 ->
+                        "Savings shortfall ${formatCurrency(g.shortfall)}"
+                    !isAtRisk && g.planned_amount > 0 ->
+                        "${formatCurrency(g.planned_amount)} planned this week"
+                    else -> "On track"
+                }
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(ChipRadius),
+                    color = if (isAtRisk) ChartOrange.copy(alpha = 0.12f) else GlassCard,
+                    onClick = { onGoalTap(g.goal_id) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (isAtRisk) "⚠" else "✓",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isAtRisk) ChartOrange else AccentPrimary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                g.goal_name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "$statusText ($detail)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+                if (g != goalImpact.last()) Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthSnapshotCard(
+    variance: BudgetVariance?,
+    month: String,
+    onAddTransactions: () -> Unit = {}
+) {
+    val income = variance?.income_amt ?: 0.0
+    val spend = (variance?.needs_amt ?: 0.0) + (variance?.wants_amt ?: 0.0)
+    val savings = variance?.assets_amt ?: 0.0
+    val savingsPct = if (income > 0) (savings / income * 100) else 0.0
+    val (dayOfMonth, daysInMonth) = try {
+        val now = java.time.LocalDate.now()
+        val monthStart = java.time.YearMonth.parse(month)
+        val cur = if (month == "${now.year}-${now.monthValue.toString().padStart(2, '0')}") now.dayOfMonth else 15
+        cur to monthStart.lengthOfMonth()
+    } catch (_: Exception) { 15 to 30 }
+    val progress = dayOfMonth.toFloat() / daysInMonth
+    val hasData = hasRealData(variance)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = GlassCard),
+        shape = RoundedCornerShape(CardRadius),
+        border = BorderStroke(CardBorderWidth, AccentPrimary.copy(alpha = 0.15f))
+    ) {
+        Column(modifier = Modifier.padding(CardPadding)) {
+            Text(
+                "Month Snapshot",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+            Spacer(Modifier.height(8.dp))
+            if (!hasData) {
+                Text(
+                    "No transactions yet this month",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Connect accounts or add transactions in SpendSense to see your budget.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = onAddTransactions) {
+                    Text("Add transactions", color = AccentPrimary, style = MaterialTheme.typography.labelMedium)
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text("Income ${formatCurrency(income)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("•", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    Text("Spend ${formatCurrency(spend)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("•", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    Text("Savings ${formatCurrency(savings)} (${savingsPct.toInt()}%)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(8.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(ProgressBarRadius))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(progress.coerceIn(0f, 1f))
+                            .background(AccentPrimary.copy(alpha = 0.6f), RoundedCornerShape(ProgressBarRadius))
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text("$dayOfMonth/$daysInMonth days", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusHeroCard(
     deviation: com.example.monytix.budgetpilot.BudgetDeviation,
-    suggestion: com.example.monytix.budgetpilot.AutopilotSuggestion?,
+    variance: BudgetVariance?,
+    autopilotSuggestion: com.example.monytix.budgetpilot.AutopilotSuggestion?,
     isApplying: Boolean,
-    onFixClick: (com.example.monytix.budgetpilot.AutopilotSuggestion) -> Unit
+    onApply: (com.example.monytix.budgetpilot.AutopilotSuggestion) -> Unit
+) {
+    val hasIssue = deviation.needs > 5 || deviation.wants > 5 || deviation.savings < -5
+    val statusColor = when {
+        hasIssue && deviation.savings < -10 -> ChartRed
+        hasIssue -> ChartOrange
+        else -> AccentPrimary
+    }
+    val statusLabel = when {
+        hasIssue && deviation.savings < -10 -> "At Risk"
+        hasIssue -> "Slightly Off"
+        else -> "On Track"
+    }
+    val statusEmoji = when {
+        hasIssue && deviation.savings < -10 -> "🔴"
+        hasIssue -> "🟡"
+        else -> "🟢"
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = statusColor.copy(alpha = 0.12f)),
+        shape = RoundedCornerShape(CardRadius),
+        border = BorderStroke(CardBorderWidth, statusColor.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(CardPadding),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(statusEmoji, style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        statusLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        if (hasIssue) "Budget needs attention" else "You're staying within plan",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            if (hasIssue && autopilotSuggestion != null) {
+                Button(
+                    onClick = { onApply(autopilotSuggestion) },
+                    enabled = !isApplying,
+                    modifier = Modifier.height(36.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = statusColor,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    if (isApplying) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(if (isApplying) "Applying…" else "Fix it", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusChipRow(
+    deviation: com.example.monytix.budgetpilot.BudgetDeviation,
+    variance: BudgetVariance?,
+    autopilotSuggestion: com.example.monytix.budgetpilot.AutopilotSuggestion?,
+    isApplying: Boolean,
+    onApply: (com.example.monytix.budgetpilot.AutopilotSuggestion) -> Unit
 ) {
     val needsStr = formatDeviation(deviation.needs)
     val wantsStr = formatDeviation(deviation.wants)
     val savingsStr = formatDeviation(deviation.savings)
     val hasIssue = deviation.needs > 5 || deviation.wants > 5 || deviation.savings < -5
+    val projectedOverspend = variance?.let { v ->
+        val shortfall = -v.variance_assets_amt
+        if (shortfall > 0) formatCurrency(shortfall) else null
+    }
+    val accent = AccentPrimary
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                if (hasIssue) ChartRed.copy(alpha = 0.12f)
-                else ChartGreen.copy(alpha = 0.2f),
-                RoundedCornerShape(8.dp)
-            )
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Needs $needsStr", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text("Wants $wantsStr", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text("Savings $savingsStr", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
-        }
-        if (hasIssue && suggestion != null) {
-            Button(
-                onClick = { onFixClick(suggestion) },
-                enabled = !isApplying,
-                modifier = Modifier.height(32.dp),
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
+        Surface(
+            shape = RoundedCornerShape(ChipRadius),
+            color = GlassCard,
+            tonalElevation = 0.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Fix", style = MaterialTheme.typography.labelMedium)
+                Text(if (hasIssue) "⚠" else "✓", style = MaterialTheme.typography.labelSmall, color = if (hasIssue) ChartOrange else accent)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (hasIssue) "Off track" else "On track",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                )
+            }
+        }
+        Surface(
+            shape = RoundedCornerShape(ChipRadius),
+            color = GlassCard,
+            tonalElevation = 0.dp
+        ) {
+            Text(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                text = "Savings $savingsStr",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+            )
+        }
+        if (projectedOverspend != null) {
+            Surface(
+                shape = RoundedCornerShape(ChipRadius),
+                color = GlassCard,
+                tonalElevation = 0.dp
+            ) {
+                Text(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    text = "Projected overspend $projectedOverspend",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ChartOrange.copy(alpha = 0.9f)
+                )
+            }
+        }
+        if (hasIssue && autopilotSuggestion != null) {
+            Surface(
+                shape = RoundedCornerShape(ChipRadius),
+                color = accent.copy(alpha = 0.15f),
+                tonalElevation = 0.dp,
+                onClick = { if (!isApplying) onApply(autopilotSuggestion) }
+            ) {
+                Text(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    text = if (isApplying) "Applying…" else "Apply fix",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accent,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NextBestActionCard(
+    suggestion: com.example.monytix.budgetpilot.AutopilotSuggestion?,
+    variance: BudgetVariance?,
+    committedBudget: CommittedBudget?,
+    isApplying: Boolean,
+    hasRealData: Boolean,
+    onApply: (com.example.monytix.budgetpilot.AutopilotSuggestion) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = GlassCard),
+        shape = RoundedCornerShape(CardRadius),
+        border = BorderStroke(CardBorderWidth, AccentPrimary.copy(alpha = 0.2f))
+    ) {
+        Column(modifier = Modifier.padding(CardPadding)) {
+            Text(
+                "Next Best Actions",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+            Spacer(Modifier.height(8.dp))
+            if (suggestion != null && hasRealData && committedBudget != null) {
+                val income = variance?.income_amt ?: 0.0
+                val amount = (income * suggestion.pct / 100).toLong().coerceAtLeast(100)
+                Text(
+                    "Reduce ${suggestion.shiftFrom.replaceFirstChar { it.uppercase() }} by ${formatCurrency(amount.toDouble())} this week",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Tap to see where to cut • ${suggestion.message}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { onApply(suggestion) },
+                        enabled = !isApplying,
+                        modifier = Modifier.height(36.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = AccentPrimary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        if (isApplying) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(if (isApplying) "Applying…" else "Apply", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            } else {
+                Text(
+                    "Add transactions in SpendSense to get personalized suggestions.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                )
             }
         }
     }
@@ -536,40 +965,16 @@ private fun CommittedBudgetSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Your Committed Budget",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = "Your Plan",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                 )
-                if (lastUpdatedAt != null) {
-                    Text(
-                        text = "Last updated: ${formatLastUpdated(lastUpdatedAt)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = onRecalculate,
-                    enabled = !isRecalculating,
-                    modifier = Modifier.height(28.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) {
-                    if (isRecalculating) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
-                    Text(if (isRecalculating) "Recalculating..." else "Recalculate now", style = MaterialTheme.typography.labelSmall)
-                }
+                Text(
+                    text = "Last updated: ${formatLastUpdated(lastUpdatedAt)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
             }
             Spacer(modifier = Modifier.height(8.dp))
             CommittedBudgetCard(
@@ -582,10 +987,11 @@ private fun CommittedBudgetSection(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = GlassCard),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(CardRadius),
+            border = BorderStroke(CardBorderWidth, AccentPrimary.copy(alpha = 0.15f))
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.padding(CardPadding),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(text = "📊", style = MaterialTheme.typography.displaySmall)
@@ -614,70 +1020,124 @@ private fun CommittedBudgetCard(
 ) {
     val actual = budgetState?.actual
     val deviation = budgetState?.deviation
-    val hasActuals = actual != null && (actual.needs_pct > 0 || actual.wants_pct > 0 || actual.savings_pct > 0)
+    val income = variance?.income_amt ?: 0.0
+    val hasRealData = hasRealData(variance)
+    val targetNeeds = income * committedBudget.alloc_needs_pct
+    val targetWants = income * committedBudget.alloc_wants_pct
+    val targetSavings = income * committedBudget.alloc_assets_pct
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = GlassCard),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(CardRadius),
+        border = BorderStroke(CardBorderWidth, AccentPrimary.copy(alpha = 0.15f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(CardPadding)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = committedBudget.plan_code,
+                    text = planCodeToName(committedBudget.plan_code),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(text = "✓", style = MaterialTheme.typography.titleLarge, color = ChartGreen)
+                Text(text = "✓", style = MaterialTheme.typography.titleMedium, color = AccentPrimary)
             }
             Spacer(modifier = Modifier.height(12.dp))
-            if (hasActuals && actual != null && deviation != null) {
-                TargetVsActualBar(
-                    targetNeeds = committedBudget.alloc_needs_pct,
-                    targetWants = committedBudget.alloc_wants_pct,
-                    targetSavings = committedBudget.alloc_assets_pct,
-                    actualNeeds = actual.needs_pct / 100,
-                    actualWants = actual.wants_pct / 100,
-                    actualSavings = actual.savings_pct / 100
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "This month: Needs ${actual.needs_pct.toInt()}% (${formatDeviation(deviation.needs)}) • Wants ${actual.wants_pct.toInt()}% (${formatDeviation(deviation.wants)}) • Savings ${actual.savings_pct.toInt()}% (${formatDeviation(deviation.savings)})",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
-                )
-            } else {
-                BudgetAllocationBar(
-                    needsPct = committedBudget.alloc_needs_pct,
-                    wantsPct = committedBudget.alloc_wants_pct,
-                    savingsPct = committedBudget.alloc_assets_pct
-                )
-                if (variance != null) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+            BudgetAllocationBar(
+                needsPct = committedBudget.alloc_needs_pct,
+                wantsPct = committedBudget.alloc_wants_pct,
+                savingsPct = committedBudget.alloc_assets_pct
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            if (hasRealData && variance != null) {
+                Text("Target", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                Spacer(Modifier.height(4.dp))
+                Text("Needs ${formatCurrency(targetNeeds)} • Wants ${formatCurrency(targetWants)} • Savings ${formatCurrency(targetSavings)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f))
+                Spacer(Modifier.height(8.dp))
+                Text("Actual", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                Spacer(Modifier.height(4.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(
+                        Triple("Needs", variance.needs_amt, targetNeeds),
+                        Triple("Wants", variance.wants_amt, targetWants),
+                        Triple("Savings", variance.assets_amt, targetSavings)
+                    ).forEach { (label, actualAmt, plannedAmt) ->
+                        val over = actualAmt > plannedAmt && plannedAmt > 0
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "$label: ${formatCurrency(actualAmt)} / ${formatCurrency(plannedAmt)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                            )
+                            if (over && label != "Needs") {
+                                Text("⚠", style = MaterialTheme.typography.labelSmall, color = ChartOrange)
+                            }
+                        }
+                    }
+                }
+                if (deviation != null && (deviation.wants > 5 || deviation.savings < -5)) {
+                    Spacer(Modifier.height(8.dp))
+                    val shortfall = -variance.variance_assets_amt
+                    if (shortfall > 0) {
                         Text(
-                            text = "Needs: ${formatCurrency(variance.needs_amt)} / ${formatCurrency(variance.planned_needs_amt)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                        )
-                        Text(
-                            text = "Wants: ${formatCurrency(variance.wants_amt)} / ${formatCurrency(variance.planned_wants_amt)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            "⚠ At this rate you'll miss savings target by ${formatCurrency(shortfall)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = ChartOrange
                         )
                     }
                 }
+                val (dayOfMonth, daysInMonth) = try {
+                    val now = java.time.LocalDate.now()
+                    val cur = now.dayOfMonth
+                    cur to java.time.YearMonth.now().lengthOfMonth()
+                } catch (_: Exception) { 15 to 30 }
+                if (dayOfMonth > 5 && hasRealData && variance != null) {
+                    Spacer(Modifier.height(12.dp))
+                    val factor = daysInMonth.toDouble() / dayOfMonth.coerceAtLeast(1)
+                    val projWants = variance.wants_amt * factor
+                    val wantsOver = projWants > targetWants
+                    Text("Projected month-end", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Needs ${formatCurrency(variance.needs_amt * factor)} • Wants ${formatCurrency(projWants)}${if (wantsOver) " ⚠" else ""} • Savings ${formatCurrency(variance.assets_amt * factor)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                    )
+                }
+            } else {
+                Text(
+                    "Add transactions to see your progress against this plan.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
             }
         }
     }
+}
+
+private fun planCodeToSavingsPct(code: String): Double = when (code) {
+    "BAL_50_30_20" -> 0.20
+    "EMERGENCY_FIRST" -> 0.30
+    "DEBT_FIRST" -> 0.25
+    "GOAL_PRIORITY" -> 0.30
+    "LEAN_BASICS" -> 0.25
+    else -> 0.20
+}
+
+private fun planCodeToName(code: String): String = when (code) {
+    "BAL_50_30_20" -> "Balanced 50/30/20"
+    "EMERGENCY_FIRST" -> "Emergency Priority"
+    "DEBT_FIRST" -> "Debt First"
+    "GOAL_PRIORITY" -> "Top 3 Goals"
+    "LEAN_BASICS" -> "Lean Basics"
+    else -> code
 }
 
 @Composable
@@ -753,117 +1213,154 @@ private fun RecommendationCard(
     recommendation: BudgetRecommendation,
     isCommitted: Boolean,
     isCommitting: Boolean,
+    variance: BudgetVariance?,
+    onPreview: () -> Unit,
     onCommit: () -> Unit
 ) {
+    val fitScore = (recommendation.score * 100).toInt()
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isCommitted) GlassCard.copy(alpha = 0.3f) else GlassCard
+            containerColor = if (isCommitted) GlassCard.copy(alpha = 0.5f) else GlassCard
         ),
-        shape = RoundedCornerShape(12.dp),
-        border = if (isCommitted) BorderStroke(2.dp, ChartGreen) else null
+        shape = RoundedCornerShape(CardRadius),
+        border = if (isCommitted) BorderStroke(CardBorderWidth, AccentPrimary.copy(alpha = 0.5f)) else BorderStroke(CardBorderWidth, AccentPrimary.copy(alpha = 0.15f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(CardPadding)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = recommendation.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (isCommitted) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "✓ Active",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = ChartGreen,
-                                modifier = Modifier
-                                    .background(ChartGreen.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                    recommendation.description?.let { desc ->
-                        Text(
-                            text = desc,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                            maxLines = 2
-                        )
-                    }
+                    Text(
+                        text = recommendation.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Fit Score ${fitScore}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AccentPrimary
+                    )
+                    Text(
+                        text = "Based on last 60 days spending",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
                 }
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "Score",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                        )
-                        Text(
-                            text = "%.2f".format(recommendation.score),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                if (isCommitted) {
+                    Text("Active", style = MaterialTheme.typography.labelSmall, color = AccentPrimary)
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            BudgetAllocationBar(
-                needsPct = recommendation.needs_budget_pct,
-                wantsPct = recommendation.wants_budget_pct,
-                savingsPct = recommendation.savings_budget_pct
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = recommendation.recommendation_reason,
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onPreview,
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                ) {
+                    Text("Preview plan", style = MaterialTheme.typography.labelMedium)
+                }
+                if (!isCommitted) {
+                    Button(
+                        onClick = onCommit,
+                        enabled = !isCommitting,
+                        modifier = Modifier.height(36.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = AccentPrimary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        if (isCommitting) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(if (isCommitting) "Switching…" else "Switch", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlanToAchieveBottomSheet(
+    plan: BudgetRecommendation,
+    variance: BudgetVariance?,
+    autopilotSuggestion: com.example.monytix.budgetpilot.AutopilotSuggestion?,
+    onDismiss: () -> Unit,
+    onCommit: () -> Unit,
+    isCommitting: Boolean
+) {
+    val income = variance?.income_amt ?: 0.0
+    val wantsOver = variance?.let { (it.wants_amt - it.planned_wants_amt).coerceAtLeast(0.0) } ?: 0.0
+    val savingsShortfall = variance?.let { (it.planned_assets_amt - it.assets_amt).coerceAtLeast(0.0) } ?: 0.0
+    val savingsPct = if (plan.savings_budget_pct > 0) plan.savings_budget_pct else planCodeToSavingsPct(plan.plan_code)
+    val weeklySavings = (income * savingsPct) / 4
+
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+        ) {
+            Text(
+                "Plan to achieve ${plan.name}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "To hit ${plan.name} this month",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
             )
-            Spacer(modifier = Modifier.height(12.dp))
-            if (isCommitted) {
-                Text(
-                    text = "✓ Committed",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ChartGreen
-                )
-            } else {
+            Spacer(Modifier.height(16.dp))
+            if (wantsOver > 0) {
+                Text("• Cut Wants by ${formatCurrency(wantsOver)} (food delivery + entertainment)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f))
+                Spacer(Modifier.height(4.dp))
+            }
+            Text("• Add Savings ${formatCurrency(weeklySavings)}/week (auto-transfer every Monday)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f))
+            if (savingsShortfall > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text("• Reduce non-essential transfers by ${formatCurrency(savingsShortfall)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f))
+            }
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onCommit,
                     enabled = !isCommitting,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(1f),
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
+                        containerColor = AccentPrimary,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
                     if (isCommitting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.width(20.dp).height(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        Spacer(Modifier.width(6.dp))
                     }
-                    Text(
-                        text = if (isCommitting) "Committing..." else "Commit to This Plan",
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Text(if (isCommitting) "Activating…" else "Start this plan")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                 }
             }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
