@@ -82,7 +82,7 @@ fun BudgetPilotScreen(
         BudgetUpdateCache.consume()?.let { viewModel.refresh() }
     }
 
-    val isZeroState = !hasRealData(uiState.variance) && uiState.committedBudget == null
+    val isZeroState = !hasRealData(uiState.variance, uiState.budgetState)
 
     Scaffold(
         topBar = {
@@ -132,7 +132,7 @@ fun BudgetPilotScreen(
             ZeroStateContent(
                 modifier = modifier.padding(innerPadding),
                 goalsCount = uiState.goalsCount,
-                hasTransactions = hasRealData(uiState.variance),
+                hasTransactions = hasRealData(uiState.variance, uiState.budgetState),
                 hasBudget = uiState.committedBudget != null,
                 plans = defaultBudgetPlans().take(2),
                 onConnectAccounts = { onNavigateTo(AppDestinations.DATA) },
@@ -178,9 +178,10 @@ fun BudgetPilotScreen(
     }
 }
 
-private fun hasRealData(variance: BudgetVariance?): Boolean {
-    val income = variance?.income_amt ?: 0.0
-    val spend = (variance?.needs_amt ?: 0.0) + (variance?.wants_amt ?: 0.0)
+private fun hasRealData(variance: BudgetVariance?, budgetState: BudgetStateResponse?): Boolean {
+    val income = variance?.income_amt ?: budgetState?.income_amt ?: 0.0
+    val spend = variance?.let { it.needs_amt + it.wants_amt }
+        ?: budgetState?.actual?.let { it.needs_amt + it.wants_amt + it.savings_amt } ?: 0.0
     return income >= 100 || spend >= 100
 }
 
@@ -285,24 +286,17 @@ private fun HeroSmartEngineBanner(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "AI-powered adaptive budgeting built around your goals.",
+                "Add transactions in SpendSense to see your allocation and get personalized plan recommendations.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
             )
             Spacer(Modifier.height(20.dp))
             Button(
-                onClick = onConnectAccounts,
+                onClick = onAddTransaction,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary, contentColor = MaterialTheme.colorScheme.onPrimary)
             ) {
-                Text("Connect Accounts")
-            }
-            Spacer(Modifier.height(8.dp))
-            TextButton(
-                onClick = onAddTransaction,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Add Transaction Manually", color = AccentPrimary)
+                Text("Add Transaction in SpendSense")
             }
         }
     }
@@ -500,13 +494,14 @@ private fun DataStateContent(
             }
         }
         item {
-            MonthSnapshotCard(variance = uiState.variance, month = uiState.selectedMonth)
+            MonthSnapshotCard(variance = uiState.variance, budgetState = uiState.budgetState, month = uiState.selectedMonth)
         }
         item {
             CommittedBudgetSection(
                 committedBudget = uiState.committedBudget,
                 variance = uiState.variance,
                 budgetState = uiState.budgetState,
+                recommendations = uiState.recommendations,
                 lastUpdatedAt = uiState.lastUpdatedAt,
                 isLoading = uiState.isLoadingCommitted,
                 onRecalculate = { viewModel.recalculate() }
@@ -518,7 +513,7 @@ private fun DataStateContent(
                 variance = uiState.variance,
                 committedBudget = uiState.committedBudget,
                 isApplying = uiState.isApplyingAdjustment,
-                hasRealData = hasRealData(uiState.variance),
+                hasRealData = hasRealData(uiState.variance, uiState.budgetState),
                 onApply = { viewModel.applyAdjustment(it.shiftFrom, it.shiftTo, it.pct) }
             )
         }
@@ -611,11 +606,12 @@ private fun StatusHeroCard(
 }
 
 @Composable
-private fun MonthSnapshotCard(variance: BudgetVariance?, month: String) {
-    val income = variance?.income_amt ?: 0.0
-    val spend = (variance?.needs_amt ?: 0.0) + (variance?.wants_amt ?: 0.0)
-    val savings = variance?.assets_amt ?: 0.0
-    val hasData = hasRealData(variance)
+private fun MonthSnapshotCard(variance: BudgetVariance?, budgetState: BudgetStateResponse?, month: String) {
+    val income = variance?.income_amt ?: budgetState?.income_amt ?: 0.0
+    val spend = variance?.let { it.needs_amt + it.wants_amt }
+        ?: budgetState?.actual?.let { it.needs_amt + it.wants_amt } ?: 0.0
+    val savings = variance?.assets_amt ?: budgetState?.actual?.savings_amt ?: 0.0
+    val hasData = hasRealData(variance, budgetState)
     val (dayOfMonth, daysInMonth) = try {
         val now = java.time.LocalDate.now()
         val cur = if (month == "${now.year}-${now.monthValue.toString().padStart(2, '0')}") now.dayOfMonth else 15
@@ -655,6 +651,7 @@ private fun CommittedBudgetSection(
     committedBudget: CommittedBudget?,
     variance: BudgetVariance?,
     budgetState: BudgetStateResponse?,
+    recommendations: List<BudgetRecommendation>,
     lastUpdatedAt: String?,
     isLoading: Boolean,
     onRecalculate: () -> Unit
@@ -673,12 +670,40 @@ private fun CommittedBudgetSection(
             CommittedBudgetCard(committedBudget = committedBudget, variance = variance, budgetState = budgetState)
         }
     } else {
-        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = GlassCard), shape = RoundedCornerShape(CardRadius)) {
-            Column(modifier = Modifier.padding(CardPadding), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("📊", style = MaterialTheme.typography.displaySmall)
+        CurrentAllocationCard(variance = variance, budgetState = budgetState, recommendations = recommendations)
+    }
+}
+
+@Composable
+private fun CurrentAllocationCard(
+    variance: BudgetVariance?,
+    budgetState: BudgetStateResponse?,
+    recommendations: List<BudgetRecommendation> = emptyList()
+) {
+    val actual = budgetState?.actual
+    val income = variance?.income_amt ?: budgetState?.income_amt ?: 0.0
+    val hasData = hasRealData(variance, budgetState)
+    val closestPlan = recommendations.maxByOrNull { it.score } ?: defaultBudgetPlans().first()
+
+    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = GlassCard), shape = RoundedCornerShape(CardRadius)) {
+        Column(modifier = Modifier.padding(CardPadding)) {
+            Text("Your Current Allocation", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f))
+            Spacer(Modifier.height(12.dp))
+            if (hasData && actual != null) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Needs: ${actual.needs_pct.toInt()}%", style = MaterialTheme.typography.bodyMedium, color = ChartBlue)
+                    Text("Wants: ${actual.wants_pct.toInt()}%", style = MaterialTheme.typography.bodyMedium, color = ChartOrange)
+                    Text("Savings: ${actual.savings_pct.toInt()}%", style = MaterialTheme.typography.bodyMedium, color = ChartGreen)
+                }
                 Spacer(Modifier.height(8.dp))
-                Text("No Budget Committed", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Text("Choose a plan below to start tracking.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text("Income ${formatCurrency(income)} • Spend ${formatCurrency(actual.needs_amt + actual.wants_amt)} • Savings ${formatCurrency(actual.savings_amt)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                Spacer(Modifier.height(8.dp))
+                Text("Based on your behavior, you're closest to ${closestPlan.name}.", style = MaterialTheme.typography.labelMedium, color = AccentPrimary)
+                Text("Choose a plan below to optimize.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            } else {
+                Text("Add transactions in SpendSense to see your allocation.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                Spacer(Modifier.height(4.dp))
+                Text("Choose a plan below to start tracking.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
             }
         }
     }
@@ -690,8 +715,8 @@ private fun CommittedBudgetCard(
     variance: BudgetVariance?,
     budgetState: BudgetStateResponse?
 ) {
-    val income = variance?.income_amt ?: 0.0
-    val hasRealData = hasRealData(variance)
+    val income = variance?.income_amt ?: budgetState?.income_amt ?: 0.0
+    val hasRealData = hasRealData(variance, budgetState)
     val targetNeeds = income * committedBudget.alloc_needs_pct
     val targetWants = income * committedBudget.alloc_wants_pct
     val targetSavings = income * committedBudget.alloc_assets_pct

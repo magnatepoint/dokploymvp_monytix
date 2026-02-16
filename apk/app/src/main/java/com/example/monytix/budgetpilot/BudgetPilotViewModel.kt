@@ -122,22 +122,40 @@ class BudgetPilotViewModel : ViewModel() {
                     }
                     val actual = state.actual
                     val income = state.income_amt
-                    val variance = state.committed_plan?.let { cp ->
-                        val targetNeeds = (cp.target["needs"] ?: 0.0) / 100.0 * income
-                        val targetWants = (cp.target["wants"] ?: 0.0) / 100.0 * income
-                        val targetSavings = (cp.target["savings"] ?: 0.0) / 100.0 * income
-                        BudgetVariance(
-                            income_amt = income,
-                            needs_amt = actual?.needs_amt ?: 0.0,
-                            planned_needs_amt = targetNeeds,
-                            variance_needs_amt = (actual?.needs_amt ?: 0.0) - targetNeeds,
-                            wants_amt = actual?.wants_amt ?: 0.0,
-                            planned_wants_amt = targetWants,
-                            variance_wants_amt = (actual?.wants_amt ?: 0.0) - targetWants,
-                            assets_amt = actual?.savings_amt ?: 0.0,
-                            planned_assets_amt = targetSavings,
-                            variance_assets_amt = (actual?.savings_amt ?: 0.0) - targetSavings
-                        )
+                    val variance = when {
+                        committedPlan != null && income > 0 -> {
+                            val targetNeeds = (committedPlan.target["needs"] ?: 0.0) / 100.0 * income
+                            val targetWants = (committedPlan.target["wants"] ?: 0.0) / 100.0 * income
+                            val targetSavings = (committedPlan.target["savings"] ?: 0.0) / 100.0 * income
+                            BudgetVariance(
+                                income_amt = income,
+                                needs_amt = actual?.needs_amt ?: 0.0,
+                                planned_needs_amt = targetNeeds,
+                                variance_needs_amt = (actual?.needs_amt ?: 0.0) - targetNeeds,
+                                wants_amt = actual?.wants_amt ?: 0.0,
+                                planned_wants_amt = targetWants,
+                                variance_wants_amt = (actual?.wants_amt ?: 0.0) - targetWants,
+                                assets_amt = actual?.savings_amt ?: 0.0,
+                                planned_assets_amt = targetSavings,
+                                variance_assets_amt = (actual?.savings_amt ?: 0.0) - targetSavings
+                            )
+                        }
+                        actual != null && (income > 0 || (actual.needs_amt + actual.wants_amt + actual.savings_amt) > 0) -> {
+                            val effectiveIncome = if (income > 0) income else (actual.needs_amt + actual.wants_amt + actual.savings_amt)
+                            BudgetVariance(
+                                income_amt = effectiveIncome,
+                                needs_amt = actual.needs_amt,
+                                planned_needs_amt = 0.0,
+                                variance_needs_amt = 0.0,
+                                wants_amt = actual.wants_amt,
+                                planned_wants_amt = 0.0,
+                                variance_wants_amt = 0.0,
+                                assets_amt = actual.savings_amt,
+                                planned_assets_amt = 0.0,
+                                variance_assets_amt = 0.0
+                            )
+                        }
+                        else -> null
                     }
                     val deviation = state.deviation?.let { d ->
                         BudgetDeviation(needs = d.needs, wants = d.wants, savings = d.savings)

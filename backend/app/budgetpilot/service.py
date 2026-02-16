@@ -243,11 +243,13 @@ class BudgetService:
                 ]
 
         if not commit:
-            return {
+            # Return aggregate (income, actual) even without a plan - BudgetPilot shows baseline
+            out = {
                 "month": month.strftime("%Y-%m"),
                 "goal_impact": [],
                 "committed_plan": None,
                 "actual": None,
+                "income_amt": 0,
                 "deviation": None,
                 "plans": [
                     {
@@ -260,6 +262,32 @@ class BudgetService:
                 ],
                 "last_updated_at": None,
             }
+            if aggregate and (aggregate.get("income_amt", 0) > 0 or (aggregate.get("needs_amt", 0) + aggregate.get("wants_amt", 0) + aggregate.get("assets_amt", 0)) > 0):
+                income = float(aggregate.get("income_amt", 0) or 0)
+                needs_amt = float(aggregate.get("needs_amt", 0) or 0)
+                wants_amt = float(aggregate.get("wants_amt", 0) or 0)
+                savings_amt = float(aggregate.get("assets_amt", 0) or 0)
+                total = needs_amt + wants_amt + savings_amt
+                if income <= 0 and total > 0:
+                    income = total  # Use spend as proxy when no income
+                if income > 0:
+                    actual_needs_pct = round((needs_amt / income) * 100, 1)
+                    actual_wants_pct = round((wants_amt / income) * 100, 1)
+                    actual_savings_pct = round((savings_amt / income) * 100, 1)
+                    out["income_amt"] = round(income, 2)
+                    out["actual"] = {
+                        "needs_pct": actual_needs_pct,
+                        "wants_pct": actual_wants_pct,
+                        "savings_pct": actual_savings_pct,
+                        "needs_amt": round(needs_amt, 2),
+                        "wants_amt": round(wants_amt, 2),
+                        "savings_amt": round(savings_amt, 2),
+                    }
+                    out["last_updated_at"] = (
+                        aggregate["computed_at"].isoformat()
+                        if aggregate.get("computed_at") else None
+                    )
+            return out
 
         target = {
             "needs": round(float(commit["alloc_needs_pct"]) * 100, 1),
