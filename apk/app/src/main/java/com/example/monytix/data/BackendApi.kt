@@ -80,6 +80,7 @@ object BackendApi {
         filename: String,
         pdfPassword: String? = null
     ): Result<UploadBatchResponse> = withContext(Dispatchers.IO) {
+        Log.d("MonytixUpload", "BackendApi.uploadStatement: filename=$filename bytes=${fileBytes.size}")
         try {
             val contentType = when {
                 filename.endsWith(".pdf", ignoreCase = true) -> ContentType.parse("application/pdf")
@@ -101,8 +102,10 @@ object BackendApi {
             ) {
                 header("Authorization", "Bearer $accessToken")
             }.body<UploadBatchResponse>()
+            Log.d("MonytixUpload", "BackendApi.uploadStatement: success batch_id=${response.upload_id}")
             Result.success(response)
         } catch (e: Exception) {
+            Log.e("MonytixUpload", "BackendApi.uploadStatement: exception", e)
             Result.failure(e)
         }
     }
@@ -227,6 +230,41 @@ object BackendApi {
                 setBody(body)
             }.body<CreateGoalResponse>()
             Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateGoal(
+        accessToken: String,
+        goalId: String,
+        estimatedCost: Double? = null,
+        targetDate: String? = null,
+        currentSavings: Double? = null
+    ): Result<GoalResponse> = withContext(Dispatchers.IO) {
+        try {
+            val body = buildMap<String, Any?> {
+                estimatedCost?.let { put("estimated_cost", it) }
+                targetDate?.let { put("target_date", it) }
+                currentSavings?.let { put("current_savings", it) }
+            }
+            val response = client.put("$baseUrl/v1/goals/$goalId") {
+                header("Authorization", "Bearer $accessToken")
+                contentType(io.ktor.http.ContentType.Application.Json)
+                setBody(body)
+            }.body<GoalResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteGoal(accessToken: String, goalId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            client.delete("$baseUrl/v1/goals/$goalId") {
+                header("Authorization", "Bearer $accessToken")
+            }
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }

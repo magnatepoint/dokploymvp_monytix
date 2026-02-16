@@ -1,6 +1,8 @@
 package com.example.monytix.spendsense
 
 import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -77,7 +79,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -120,11 +126,26 @@ import java.util.Locale
 @Composable
 fun SpendSenseScreen(
     viewModel: SpendSenseViewModel = viewModel(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLaunchFilePicker: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(SpendSenseTab.CATEGORIES) }
+    var showManualAddByRequest by remember { mutableStateOf(false) }
+    val pendingUpload by PendingUploadHolder.state
+    val pendingManualAdd by PendingManualAddHolder.state
     val colorScheme = MaterialTheme.colorScheme
+
+    LaunchedEffect(pendingUpload) {
+        if (pendingUpload != null) selectedTab = SpendSenseTab.TRANSACTIONS
+    }
+    LaunchedEffect(pendingManualAdd) {
+        if (pendingManualAdd) {
+            selectedTab = SpendSenseTab.TRANSACTIONS
+            showManualAddByRequest = true
+            PendingManualAddHolder.state.value = false
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.goalUpdatedToast) {
@@ -162,8 +183,18 @@ fun SpendSenseScreen(
             WelcomeBanner(username = uiState.userEmail ?: "User")
             TabBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
             when (selectedTab) {
-                SpendSenseTab.CATEGORIES -> CategoriesTab(viewModel = viewModel)
-                SpendSenseTab.TRANSACTIONS -> TransactionsTab(viewModel = viewModel)
+                SpendSenseTab.CATEGORIES -> CategoriesTab(
+                    viewModel = viewModel,
+                    onLaunchFilePicker = onLaunchFilePicker,
+                    onSwitchToTransactions = { selectedTab = SpendSenseTab.TRANSACTIONS },
+                    onShowManualAdd = { selectedTab = SpendSenseTab.TRANSACTIONS; showManualAddByRequest = true }
+                )
+                SpendSenseTab.TRANSACTIONS -> TransactionsTab(
+                    viewModel = viewModel,
+                    onLaunchFilePicker = onLaunchFilePicker,
+                    showManualAddByRequest = showManualAddByRequest,
+                    onClearManualAddRequest = { showManualAddByRequest = false }
+                )
                 SpendSenseTab.INSIGHTS -> InsightsTab(viewModel = viewModel)
             }
         }
@@ -277,7 +308,12 @@ private fun TabBar(selectedTab: SpendSenseTab, onTabSelected: (SpendSenseTab) ->
 }
 
 @Composable
-private fun CategoriesTab(viewModel: SpendSenseViewModel) {
+private fun CategoriesTab(
+    viewModel: SpendSenseViewModel,
+    onLaunchFilePicker: () -> Unit = {},
+    onSwitchToTransactions: () -> Unit = {},
+    onShowManualAdd: () -> Unit = {}
+) {
     val uiState by viewModel.uiState.collectAsState()
 
     LaunchedEffect(Unit) {
@@ -285,22 +321,52 @@ private fun CategoriesTab(viewModel: SpendSenseViewModel) {
         viewModel.loadInsights()
     }
 
-    if (uiState.isLoading && uiState.kpis == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+    Box(Modifier.fillMaxSize()) {
+        if (uiState.isLoading && uiState.kpis == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            }
+        } else {
+            val kpis = uiState.kpis
+            if (kpis == null || (kpis.month == null && kpis.top_categories.isEmpty())) {
+                EmptyState(
+                    title = "No KPI data available",
+                    subtitle = "Upload transaction statements to see spending insights"
+                )
+            } else {
+                categoriesTabContent(viewModel, uiState, kpis)
+            }
         }
-        return
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 80.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            FloatingActionButton(
+                onClick = { onLaunchFilePicker(); onSwitchToTransactions() },
+                containerColor = SurfaceElevated,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ) {
+                Icon(Icons.Default.Upload, contentDescription = "Upload PDF")
+            }
+            FloatingActionButton(
+                onClick = onShowManualAdd,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Transaction")
+            }
+        }
     }
+}
 
-    val kpis = uiState.kpis
-    if (kpis == null || (kpis.month == null && kpis.top_categories.isEmpty())) {
-        EmptyState(
-            title = "No KPI data available",
-            subtitle = "Upload transaction statements to see spending insights"
-        )
-        return
-    }
-
+@Composable
+private fun categoriesTabContent(
+    viewModel: SpendSenseViewModel,
+    uiState: SpendSenseUiState,
+    kpis: com.example.monytix.data.KpiResponse
+) {
     val income = kpis.income_amount ?: 0.0
     val needs = kpis.needs_amount ?: 0.0
     val wants = kpis.wants_amount ?: 0.0
@@ -737,9 +803,22 @@ private fun CategoryCard(category: CategorySpendKpi) {
 }
 
 @Composable
-private fun TransactionsTab(viewModel: SpendSenseViewModel) {
+private fun TransactionsTab(
+    viewModel: SpendSenseViewModel,
+    onLaunchFilePicker: () -> Unit = {},
+    showManualAddByRequest: Boolean = false,
+    onClearManualAddRequest: () -> Unit = {}
+) {
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
+    var pendingUpload by PendingUploadHolder.state
+    var showManualAdd by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showManualAddByRequest) {
+        if (showManualAddByRequest) {
+            showManualAdd = true
+            onClearManualAddRequest()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadTransactions(1, append = false)
@@ -751,21 +830,6 @@ private fun TransactionsTab(viewModel: SpendSenseViewModel) {
         filters.channel != null || filters.direction != null || filters.bankCode != null ||
         filters.startDate != null || filters.endDate != null
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            try {
-                val filename = it.lastPathSegment ?: "statement.pdf"
-                val bytes = context.contentResolver.openInputStream(it)?.use { stream -> stream.readBytes() }
-                if (bytes != null && bytes.isNotEmpty()) {
-                    viewModel.uploadStatement(bytes, filename)
-                }
-            } catch (_: Exception) {}
-        }
-    }
-
-    var showManualAdd by remember { mutableStateOf(false) }
     var selectedTransaction by remember { mutableStateOf<TransactionRecordResponse?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var channelExpanded by remember { mutableStateOf(false) }
@@ -773,6 +837,7 @@ private fun TransactionsTab(viewModel: SpendSenseViewModel) {
     var bankExpanded by remember { mutableStateOf(false) }
     var dateExpanded by remember { mutableStateOf(false) }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -1056,38 +1121,54 @@ private fun TransactionsTab(viewModel: SpendSenseViewModel) {
                 }
             }
         }
+    }
 
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.End
+        // Floating action buttons (Upload PDF + Add Transaction) - overlay at bottom-right
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 80.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             FloatingActionButton(
-                onClick = { filePickerLauncher.launch("*/*") },
-                containerColor = GlassCard,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(end = 8.dp)
+                onClick = {
+                    Log.d("MonytixUpload", "Upload FAB clicked, launching file picker")
+                    onLaunchFilePicker()
+                },
+                containerColor = SurfaceElevated,
+                contentColor = MaterialTheme.colorScheme.onSurface
             ) {
-                Icon(Icons.Default.Upload, contentDescription = "Upload")
+                Icon(Icons.Default.Upload, contentDescription = "Upload PDF")
             }
             FloatingActionButton(
                 onClick = { showManualAdd = true },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
+                Icon(Icons.Default.Add, contentDescription = "Add Transaction")
             }
         }
     }
 
     if (showManualAdd) {
         ManualAddDialog(
+            viewModel = viewModel,
             onDismiss = { showManualAdd = false },
             onSubmit = { date, merchant, desc, amount, direction, catCode, subCode, channel ->
                 viewModel.createTransaction(date, merchant, desc, amount, direction, catCode, subCode, channel)
                 showManualAdd = false
             }
+        )
+    }
+
+    pendingUpload?.let { (bytes, filename) ->
+        Log.d("MonytixUpload", "TransactionsTab: showing UploadStatementDialog filename=$filename bytes=${bytes.size}")
+        UploadStatementDialog(
+            filename = filename,
+            fileBytes = bytes,
+            viewModel = viewModel,
+            onDismiss = { PendingUploadHolder.state.value = null },
+            onSuccess = { PendingUploadHolder.state.value = null }
         )
     }
 
@@ -1545,98 +1626,391 @@ private fun TransactionRow(
 }
 
 @Composable
+private fun UploadStatementDialog(
+    filename: String,
+    fileBytes: ByteArray,
+    viewModel: SpendSenseViewModel,
+    onDismiss: () -> Unit,
+    onSuccess: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val colorScheme = MaterialTheme.colorScheme
+    var password by remember { mutableStateOf("") }
+    var hasInitiatedUpload by remember { mutableStateOf(false) }
+    val needsPassword = uiState.error?.lowercase()?.contains("password") == true
+
+    LaunchedEffect(uiState.isLoading, uiState.error) {
+        if (hasInitiatedUpload && !uiState.isLoading && uiState.error == null) {
+            hasInitiatedUpload = false
+            onSuccess()
+        }
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = {
+            viewModel.clearError()
+            onDismiss()
+        },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .heightIn(max = 480.dp),
+            colors = CardDefaults.cardColors(containerColor = colorScheme.background),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp)
+            ) {
+                Text("Upload Statement", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colorScheme.onSurface)
+                Text("PDF, Excel (XLS/XLSX), or CSV", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Spacer(Modifier.height(16.dp))
+                Text(filename, style = MaterialTheme.typography.bodyMedium, color = colorScheme.onSurface, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(16.dp))
+                val isPdf = filename.endsWith(".pdf", ignoreCase = true)
+                Text(
+                    if (needsPassword) "PDF Password (required)" else if (isPdf) "PDF Password (if file is locked)" else "PDF Password (optional)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (isPdf || needsPassword) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (needsPassword) ChartOrange else if (isPdf) colorScheme.onSurface else TextSecondary
+                )
+                Spacer(Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    placeholder = {
+                        Text(
+                            if (needsPassword) "Enter password to unlock PDF" else if (isPdf) "Enter password if PDF is locked" else "Enter password if file is encrypted",
+                            color = TextSecondary
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = colorScheme.onSurface,
+                        unfocusedTextColor = colorScheme.onSurface,
+                        focusedBorderColor = if (needsPassword) ChartOrange else MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                )
+                if (needsPassword) {
+                    Text(
+                        "This file is password protected. Enter the password and tap Upload.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ChartOrange,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                } else if (isPdf) {
+                    Text(
+                        "If your PDF is password-protected, enter it above before tapping Upload.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                uiState.error?.let { err ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = ChartRed.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(err, style = MaterialTheme.typography.bodySmall, color = ChartRed, modifier = Modifier.padding(12.dp))
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    TextButton(onClick = { viewModel.clearError(); onDismiss() }) {
+                        Text("Cancel", color = colorScheme.onSurface.copy(alpha = 0.7f))
+                    }
+                    Button(
+                        onClick = {
+                            if (needsPassword && password.isBlank()) return@Button
+                            Log.d("MonytixUpload", "UploadStatementDialog: Upload tapped filename=$filename hasPassword=${password.isNotBlank()}")
+                            hasInitiatedUpload = true
+                            viewModel.uploadStatement(fileBytes, filename, password.takeIf { it.isNotBlank() })
+                        },
+                        enabled = !uiState.isLoading && (!needsPassword || password.isNotBlank()),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (uiState.isLoading) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(if (uiState.isLoading) "Uploading..." else "Upload")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ManualAddDialog(
+    viewModel: SpendSenseViewModel,
     onDismiss: () -> Unit,
     onSubmit: (String, String, String?, Double, String, String?, String?, String?) -> Unit
 ) {
+    val uiState by viewModel.uiState.collectAsState()
+    val colorScheme = MaterialTheme.colorScheme
     var date by remember { mutableStateOf(LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)) }
     var merchant by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var direction by remember { mutableStateOf("debit") }
+    var categoryCode by remember { mutableStateOf("") }
+    var subcategoryCode by remember { mutableStateOf("") }
+    var channel by remember { mutableStateOf<String?>(null) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+    var subcategoryExpanded by remember { mutableStateOf(false) }
+    var channelExpanded by remember { mutableStateOf(false) }
 
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+    LaunchedEffect(categoryCode) {
+        if (categoryCode.isNotBlank()) viewModel.loadSubcategories(categoryCode)
+        else subcategoryCode = ""
+    }
+
+    val channelOptions = if (uiState.channels.isNotEmpty()) uiState.channels else listOf("cash", "upi", "neft", "imps", "card", "atm", "ach", "nach", "other")
+    val subcategoryRequired = categoryCode.isNotBlank() && uiState.subcategories.isNotEmpty()
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .heightIn(max = 560.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Column(Modifier.padding(24.dp)) {
-                Text("Add Transaction", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp)
+            ) {
+                Text("Add Transaction", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colorScheme.onSurface)
+                Text("Enter transaction details manually", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     value = date,
                     onValueChange = { date = it },
-                    label = { Text("Date (YYYY-MM-DD)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    label = { Text("Date *", color = colorScheme.onSurface.copy(alpha = 0.7f)) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedTextColor = colorScheme.onSurface,
+                        unfocusedTextColor = colorScheme.onSurface,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        unfocusedBorderColor = colorScheme.onSurface.copy(alpha = 0.3f)
                     )
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = merchant,
                     onValueChange = { merchant = it },
-                    label = { Text("Merchant", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    label = { Text("Merchant Name *", color = colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    placeholder = { Text("e.g., Amazon, Grocery Store", color = TextSecondary) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedTextColor = colorScheme.onSurface,
+                        unfocusedTextColor = colorScheme.onSurface,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        unfocusedBorderColor = colorScheme.onSurface.copy(alpha = 0.3f)
                     )
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { amount = it },
-                    label = { Text("Amount", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    label = { Text("Amount *", color = colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    placeholder = { Text("0.00", color = TextSecondary) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedTextColor = colorScheme.onSurface,
+                        unfocusedTextColor = colorScheme.onSurface,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        unfocusedBorderColor = colorScheme.onSurface.copy(alpha = 0.3f)
                     )
                 )
                 Spacer(Modifier.height(8.dp))
+                Text("Type *", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
+                    Button(
                         onClick = { direction = "debit" },
-                        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                            contentColor = if (direction == "debit") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = if (direction == "debit") ChartRed.copy(alpha = 0.3f) else GlassCard,
+                            contentColor = if (direction == "debit") ChartRed else colorScheme.onSurface.copy(alpha = 0.7f)
                         )
-                    ) {
-                        Text("Expense")
-                    }
-                    TextButton(
+                    ) { Text("Debit (Expense)") }
+                    Button(
                         onClick = { direction = "credit" },
-                        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                            contentColor = if (direction == "credit") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = if (direction == "credit") Success.copy(alpha = 0.3f) else GlassCard,
+                            contentColor = if (direction == "credit") Success else colorScheme.onSurface.copy(alpha = 0.7f)
                         )
-                    ) {
-                        Text("Income")
+                    ) { Text("Credit (Income)") }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Category *", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(4.dp))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = uiState.categories.find { it.category_code == categoryCode }?.category_name ?: "Select category",
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { categoryExpanded = true },
+                        trailingIcon = {
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand", modifier = Modifier.clickable { categoryExpanded = true })
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = colorScheme.onSurface,
+                            unfocusedTextColor = colorScheme.onSurface,
+                            disabledTextColor = colorScheme.onSurface,
+                            focusedBorderColor = AccentPrimary,
+                            unfocusedBorderColor = colorScheme.outline.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    DropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }, modifier = Modifier.fillMaxWidth(0.9f)) {
+                        uiState.categories.forEach { cat ->
+                            DropdownMenuItem(
+                                text = { Text(cat.category_name) },
+                                onClick = {
+                                    categoryCode = cat.category_code
+                                    subcategoryCode = ""
+                                    categoryExpanded = false
+                                }
+                            )
+                        }
                     }
                 }
+                if (categoryCode.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Subcategory ${if (subcategoryRequired) "*" else ""}", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                    Spacer(Modifier.height(4.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = uiState.subcategories.find { it.subcategory_code == subcategoryCode }?.subcategory_name ?: "Select subcategory",
+                            onValueChange = {},
+                            readOnly = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = uiState.subcategories.isNotEmpty()) { subcategoryExpanded = true },
+                            trailingIcon = {
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand", modifier = Modifier.clickable(enabled = uiState.subcategories.isNotEmpty()) { subcategoryExpanded = true })
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = colorScheme.onSurface,
+                                unfocusedTextColor = colorScheme.onSurface,
+                                disabledTextColor = colorScheme.onSurface,
+                                focusedBorderColor = AccentPrimary,
+                                unfocusedBorderColor = colorScheme.outline.copy(alpha = 0.3f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        DropdownMenu(expanded = subcategoryExpanded, onDismissRequest = { subcategoryExpanded = false }, modifier = Modifier.fillMaxWidth(0.9f)) {
+                            if (uiState.subcategories.isEmpty()) {
+                                DropdownMenuItem(text = { Text("No subcategories", color = TextSecondary) }, onClick = { subcategoryExpanded = false })
+                            } else {
+                                uiState.subcategories.forEach { sub ->
+                                    DropdownMenuItem(
+                                        text = { Text(sub.subcategory_name) },
+                                        onClick = { subcategoryCode = sub.subcategory_code; subcategoryExpanded = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Channel (optional)", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(4.dp))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = channel ?: "Select channel",
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { channelExpanded = true },
+                        trailingIcon = {
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand", modifier = Modifier.clickable { channelExpanded = true })
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = colorScheme.onSurface,
+                            unfocusedTextColor = colorScheme.onSurface,
+                            disabledTextColor = colorScheme.onSurface,
+                            focusedBorderColor = AccentPrimary,
+                            unfocusedBorderColor = colorScheme.outline.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    DropdownMenu(expanded = channelExpanded, onDismissRequest = { channelExpanded = false }, modifier = Modifier.fillMaxWidth(0.9f)) {
+                        DropdownMenuItem(text = { Text("None", color = TextSecondary) }, onClick = { channel = null; channelExpanded = false })
+                        channelOptions.forEach { ch ->
+                            DropdownMenuItem(
+                                text = { Text(ch.replaceFirstChar { c -> c.uppercase() }) },
+                                onClick = { channel = ch; channelExpanded = false }
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (optional)", color = colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    placeholder = { Text("Additional notes...", color = TextSecondary) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp),
+                    maxLines = 3,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = colorScheme.onSurface,
+                        unfocusedTextColor = colorScheme.onSurface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                )
                 Spacer(Modifier.height(16.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                val amt = amount.toDoubleOrNull() ?: 0.0
+                val canSubmit = merchant.isNotBlank() && amt > 0 && categoryCode.isNotBlank() &&
+                    (!subcategoryRequired || subcategoryCode.isNotBlank())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        Text("Cancel", color = colorScheme.onSurface.copy(alpha = 0.7f))
                     }
                     Button(
                         onClick = {
-                            val amt = amount.toDoubleOrNull() ?: 0.0
-                            if (merchant.isNotBlank() && amt > 0) {
-                                onSubmit(date, merchant, description.takeIf { it.isNotBlank() }, amt, direction, null, null, null)
+                            if (canSubmit) {
+                                onSubmit(
+                                    date,
+                                    merchant,
+                                    description.takeIf { it.isNotBlank() },
+                                    amt,
+                                    direction,
+                                    categoryCode.takeIf { it.isNotBlank() },
+                                    subcategoryCode.takeIf { it.isNotBlank() },
+                                    channel
+                                )
                             }
                         },
+                        enabled = canSubmit,
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
                     ) {
-                        Text("Add")
+                        Text("Create Transaction")
                     }
                 }
             }

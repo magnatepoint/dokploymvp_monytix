@@ -34,6 +34,12 @@ data class AutopilotSuggestion(
     val message: String
 )
 
+data class GoalProgressForBudget(
+    val goal_id: String,
+    val goal_name: String,
+    val monthly_required: Double
+)
+
 data class BudgetPilotUiState(
     val recommendations: List<BudgetRecommendation> = emptyList(),
     val committedBudget: CommittedBudget? = null,
@@ -45,6 +51,11 @@ data class BudgetPilotUiState(
     val userEmail: String? = null,
     val selectedMonth: String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE).substring(0, 7),
     val goalsCount: Int = 0,
+    val goalsProgressList: List<GoalProgressForBudget> = emptyList(),
+    val goalRequiredMonthlyTotal: Double = 0.0,
+    val goalRequiredSavingsRate: Double = 0.0,
+    val autopilotStatus: String = "Waiting for data",
+    val adaptivePlanReason: List<String> = emptyList(),
     val isLoadingRecommendations: Boolean = false,
     val isLoadingCommitted: Boolean = false,
     val isLoadingVariance: Boolean = false,
@@ -105,8 +116,15 @@ class BudgetPilotViewModel : ViewModel() {
             }
 
             val stateResult = withContext(Dispatchers.IO) { BackendApi.getBudgetState(token, monthParam) }
-            val goalsResult = withContext(Dispatchers.IO) { BackendApi.getUserGoals(token) }
-            val goalsCount = goalsResult.getOrNull()?.count { it.status.lowercase() == "active" } ?: 0
+            val goalsProgressResult = withContext(Dispatchers.IO) { BackendApi.getGoalsProgress(token) }
+            val goalsProgress = goalsProgressResult.getOrNull()?.goals ?: emptyList()
+            val goalsCount = goalsProgress.size
+            val goalRequiredTotal = goalsProgress.sumOf { it.monthly_required ?: 0.0 }
+            val goalsProgressList = goalsProgress.mapNotNull { g ->
+                (g.monthly_required ?: 0.0).takeIf { it > 0 }?.let { req ->
+                    GoalProgressForBudget(goal_id = g.goal_id, goal_name = g.goal_name, monthly_required = req)
+                }
+            }
 
             stateResult.fold(
                 onSuccess = { state ->
@@ -177,6 +195,24 @@ class BudgetPilotViewModel : ViewModel() {
                             score = p.score
                         )
                     }
+                    val incomeAmt = state.income_amt
+                    val savingsAmt = actual?.savings_amt ?: 0.0
+                    val requiredSavingsRate = if (incomeAmt > 0 && goalRequiredTotal > 0) (goalRequiredTotal / incomeAmt) * 100 else 0.0
+                    val actualSavingsRate = if (incomeAmt > 0) (savingsAmt / incomeAmt) * 100 else 0.0
+                    val totalSpend = (actual?.needs_amt ?: 0.0) + (actual?.wants_amt ?: 0.0) + savingsAmt
+                    val status = when {
+                        incomeAmt < 100 && totalSpend < 100 -> "Waiting for data"
+                        suggestion != null -> "Adjusting"
+                        deviation != null && (deviation.savings < -5 || deviation.needs > 5 || deviation.wants > 5) -> "Adjusting"
+                        else -> "On Track"
+                    }
+                    val adaptiveReason = buildAdaptivePlanReason(
+                        deviation = deviation,
+                        goalImpact = state.goal_impact,
+                        topPlanReason = recommendations.firstOrNull()?.recommendation_reason,
+                        actual = actual,
+                        income = incomeAmt
+                    )
                     _uiState.update {
                         it.copy(
                             budgetState = state,
@@ -187,6 +223,11 @@ class BudgetPilotViewModel : ViewModel() {
                             recommendations = recommendations,
                             lastUpdatedAt = state.last_updated_at,
                             goalsCount = goalsCount,
+                            goalsProgressList = goalsProgressList,
+                            goalRequiredMonthlyTotal = goalRequiredTotal,
+                            goalRequiredSavingsRate = requiredSavingsRate,
+                            autopilotStatus = status,
+                            adaptivePlanReason = adaptiveReason,
                             isLoadingState = false,
                             isLoadingRecommendations = false,
                             isLoadingCommitted = false,
@@ -393,5 +434,32 @@ class BudgetPilotViewModel : ViewModel() {
             else -> null
         }
         return deviation to suggestion
+    }
+
+    private fun buildAdaptivePlanReason(
+        deviation: BudgetDeviation?,
+        goalImpact: List<com.example.monytix.data.BudgetGoalImpact>,
+        topPlanReason: String?,
+        actual: com.example.monytix.data.BudgetStateActual?,
+        income: Double
+    ): List<String> {
+        val reasons = mutableListOf<String>()
+        if (topPlanReason?.isNotBlank() == true) {
+            reasons.add(topPlanReason.trim())
+        }
+        val totalPlanned = goalImpact.sumOf { it.planned_amount }
+        if (totalPlanned > 0 && income > 0 && (totalPlanned / income) > 0.15) {
+            reasons.add("High long-term goal load")
+        }
+        val needsPct = actual?.needs_pct ?: 0.0
+        if (needsPct > 55) {
+            reasons.add("Above-average EMI commitments")
+        }
+        if (deviation != null && (kotlin.math.abs(deviation.needs) > 5 || kotlin.math.abs(deviation.wants) > 5 || kotlin.math.abs(deviation.savings) > 5)) {
+            if (!reasons.any { it.contains("volatility") }) {
+                reasons.add("Moderate income volatility")
+            }
+        }
+        return reasons.distinct()
     }
 }

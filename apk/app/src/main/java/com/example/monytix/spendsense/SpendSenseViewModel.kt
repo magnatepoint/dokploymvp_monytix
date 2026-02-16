@@ -1,5 +1,6 @@
 package com.example.monytix.spendsense
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.monytix.data.AccountItemResponse
@@ -25,6 +26,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+
+/** Holds pending file upload - survives activity recreation, triggers recomposition */
+object PendingUploadHolder {
+    val state = androidx.compose.runtime.mutableStateOf<Pair<ByteArray, String>?>(null)
+}
+
+/** When true, SpendSense switches to Transactions tab and shows ManualAddDialog */
+object PendingManualAddHolder {
+    val state = androidx.compose.runtime.mutableStateOf(false)
+}
 
 data class SpendSenseUiState(
     val kpis: KpiResponse? = null,
@@ -657,18 +668,24 @@ class SpendSenseViewModel : ViewModel() {
     }
 
     fun uploadStatement(fileBytes: ByteArray, filename: String, pdfPassword: String? = null) {
+        Log.d("MonytixUpload", "uploadStatement: filename=$filename bytes=${fileBytes.size} hasPassword=${pdfPassword != null}")
         viewModelScope.launch {
-            val token = getAccessToken() ?: return@launch
+            val token = getAccessToken() ?: run {
+                Log.e("MonytixUpload", "uploadStatement: no access token")
+                return@launch
+            }
             _uiState.update { it.copy(isLoading = true, error = null) }
             val result = withContext(Dispatchers.IO) {
                 BackendApi.uploadStatement(token, fileBytes, filename, pdfPassword)
             }
             result.fold(
                 onSuccess = { batch ->
+                    Log.d("MonytixUpload", "uploadStatement: success batch_id=${batch.upload_id}")
                     _uiState.update { it.copy(isLoading = false, error = null) }
                     pollBatchAndRefresh(batch.upload_id)
                 },
                 onFailure = { e ->
+                    Log.e("MonytixUpload", "uploadStatement: failed", e)
                     _uiState.update {
                         it.copy(
                             isLoading = false,

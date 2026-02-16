@@ -34,7 +34,9 @@ async def refresh_budget_aggregate(
     """
     Recompute and upsert budget_user_month_aggregate for user+month.
     Maps txn_type to needs/wants/assets (debt, protection, tax -> needs; etc).
-    Returns the updated aggregate or None if no commit exists.
+    Populates aggregate from transactions even when user has no committed plan,
+    so BudgetPilot can show actuals before a plan is chosen.
+    Returns the updated aggregate or None if no data (no transactions and no plan).
     """
     user_uuid = UUID(user_id)
     if month is None:
@@ -53,6 +55,8 @@ async def refresh_budget_aggregate(
     )
     assets_case = "CASE WHEN txn_type = 'assets' AND direction = 'debit' THEN amount ELSE 0 END"
 
+    # Use actuals (transactions) as driver: populate aggregate when user has transactions,
+    # even without a committed plan. UNION with plan-only for users who have a plan but no txns yet.
     await conn.execute(
         f"""
         WITH m AS (SELECT date_trunc('month', $2::date)::date AS month),
@@ -71,22 +75,27 @@ async def refresh_budget_aggregate(
             FROM budgetpilot.user_budget_commit c
             WHERE c.user_id = $1 AND c.month = (SELECT month FROM m)
         ),
-        joined AS (
-            SELECT p.user_id, p.month,
+        driven AS (
+            SELECT a.user_id, a.month,
                    COALESCE(a.income_amt, 0) AS income_amt,
                    COALESCE(a.needs_amt, 0) AS needs_amt,
                    COALESCE(a.wants_amt, 0) AS wants_amt,
                    COALESCE(a.assets_amt, 0) AS assets_amt,
                    p.alloc_needs_pct, p.alloc_wants_pct, p.alloc_assets_pct
+            FROM actuals a
+            LEFT JOIN plan p ON a.user_id = p.user_id AND a.month = p.month
+            UNION
+            SELECT p.user_id, p.month, 0::double precision, 0::double precision, 0::double precision, 0::double precision,
+                   p.alloc_needs_pct, p.alloc_wants_pct, p.alloc_assets_pct
             FROM plan p
-            LEFT JOIN actuals a ON a.user_id = p.user_id AND a.month = p.month
+            WHERE NOT EXISTS (SELECT 1 FROM actuals a2 WHERE a2.user_id = p.user_id AND a2.month = p.month)
         ),
         planned AS (
-            SELECT j.*,
-                   ROUND(COALESCE(j.income_amt, 0) * COALESCE(j.alloc_needs_pct, 0), 2) AS planned_needs_amt,
-                   ROUND(COALESCE(j.income_amt, 0) * COALESCE(j.alloc_wants_pct, 0), 2) AS planned_wants_amt,
-                   ROUND(COALESCE(j.income_amt, 0) * COALESCE(j.alloc_assets_pct, 0), 2) AS planned_assets_amt
-            FROM joined j
+            SELECT d.*,
+                   ROUND(COALESCE(d.income_amt, 0) * COALESCE(d.alloc_needs_pct, 0), 2) AS planned_needs_amt,
+                   ROUND(COALESCE(d.income_amt, 0) * COALESCE(d.alloc_wants_pct, 0), 2) AS planned_wants_amt,
+                   ROUND(COALESCE(d.income_amt, 0) * COALESCE(d.alloc_assets_pct, 0), 2) AS planned_assets_amt
+            FROM driven d
         )
         INSERT INTO budgetpilot.budget_user_month_aggregate (
             user_id, month, income_amt,
@@ -115,7 +124,7 @@ async def refresh_budget_aggregate(
         month,
     )
 
-    # Only return aggregate if user has a commit for this month
+    # Return aggregate from table (no longer requires a commit - we now populate from transactions)
     row = await conn.fetchrow(
         """
         SELECT b.user_id, b.month, b.income_amt,
@@ -124,7 +133,6 @@ async def refresh_budget_aggregate(
                b.assets_amt, b.planned_assets_amt, b.variance_assets_amt,
                b.computed_at
         FROM budgetpilot.budget_user_month_aggregate b
-        JOIN budgetpilot.user_budget_commit c ON c.user_id = b.user_id AND c.month = b.month
         WHERE b.user_id = $1 AND b.month = $2
         """,
         user_uuid,

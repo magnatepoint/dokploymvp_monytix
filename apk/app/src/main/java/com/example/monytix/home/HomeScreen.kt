@@ -38,8 +38,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -49,6 +51,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -80,12 +83,15 @@ import com.example.monytix.ui.theme.AccentSecondary
 import com.example.monytix.ui.theme.BackgroundGradientBottom
 import com.example.monytix.ui.theme.BackgroundGradientTop
 import com.example.monytix.ui.theme.GlassCard
+import com.example.monytix.ui.theme.SurfaceElevated
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = viewModel(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLaunchFilePicker: () -> Unit = {},
+    onAddTransaction: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(ConsoleTab.OVERVIEW) }
@@ -172,6 +178,27 @@ fun HomeScreen(
                         ConsoleTab.AI_INSIGHT -> AIInsightTab(viewModel = viewModel)
                     }
                 }
+            }
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 80.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            FloatingActionButton(
+                onClick = onLaunchFilePicker,
+                containerColor = SurfaceElevated,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ) {
+                Icon(Icons.Default.Upload, contentDescription = "Upload PDF")
+            }
+            FloatingActionButton(
+                onClick = onAddTransaction,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Transaction")
             }
         }
     }

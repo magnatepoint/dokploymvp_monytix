@@ -121,6 +121,59 @@ class GoalTrackerViewModel : ViewModel() {
         }
     }
 
+    fun updateGoal(
+        goalId: String,
+        estimatedCost: Double? = null,
+        targetDate: String? = null,
+        currentSavings: Double? = null
+    ) {
+        viewModelScope.launch {
+            val token = getAccessToken() ?: return@launch
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            val result = withContext(Dispatchers.IO) {
+                BackendApi.updateGoal(token, goalId, estimatedCost, targetDate, currentSavings)
+            }
+            result.fold(
+                onSuccess = {
+                    _uiState.update { it.copy(isLoading = false) }
+                    loadData()
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = e.message ?: "Failed to update goal"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun deleteGoal(goalId: String) {
+        viewModelScope.launch {
+            val token = getAccessToken() ?: return@launch
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            val result = withContext(Dispatchers.IO) {
+                BackendApi.deleteGoal(token, goalId)
+            }
+            result.fold(
+                onSuccess = {
+                    _uiState.update { it.copy(isLoading = false) }
+                    loadData()
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = e.message ?: "Failed to delete goal"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
     fun refresh() {
         loadData()
     }

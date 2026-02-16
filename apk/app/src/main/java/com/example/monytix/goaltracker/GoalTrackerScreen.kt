@@ -23,8 +23,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -77,21 +82,73 @@ fun GoalTrackerScreen(
     val colorScheme = MaterialTheme.colorScheme
     var showAddGoal by remember { mutableStateOf(false) }
     var selectedGoal by remember { mutableStateOf<Pair<GoalResponse, GoalProgressItem?>?>(null) }
+    var showEditGoal by remember { mutableStateOf<GoalResponse?>(null) }
+    var showDeleteGoal by remember { mutableStateOf<GoalResponse?>(null) }
 
     Scaffold(
         topBar = {
-            androidx.compose.material3.TopAppBar(
-                title = { Text("GoalTracker", color = colorScheme.onBackground) },
-                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                    containerColor = colorScheme.background,
-                    titleContentColor = colorScheme.onBackground
-                ),
-                actions = {
-                    IconButton(onClick = { viewModel.refresh() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = colorScheme.onBackground)
+            when (val sel = selectedGoal) {
+                null -> androidx.compose.material3.TopAppBar(
+                    title = { Text("GoalTracker", color = colorScheme.onBackground) },
+                    colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                        containerColor = colorScheme.background,
+                        titleContentColor = colorScheme.onBackground
+                    ),
+                    actions = {
+                        IconButton(onClick = { viewModel.refresh() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = colorScheme.onBackground)
+                        }
                     }
+                )
+                else -> {
+                    val (goal, _) = sel
+                    var showGoalMenu by remember { mutableStateOf(false) }
+                    androidx.compose.material3.TopAppBar(
+                        title = { Text(goal.goal_name, color = colorScheme.onBackground, maxLines = 1) },
+                        navigationIcon = {
+                            IconButton(onClick = { selectedGoal = null }) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = colorScheme.onBackground
+                                )
+                            }
+                        },
+                        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                            containerColor = colorScheme.background,
+                            titleContentColor = colorScheme.onBackground
+                        ),
+                        actions = {
+                            Box {
+                                IconButton(onClick = { showGoalMenu = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = colorScheme.onBackground)
+                                }
+                                androidx.compose.material3.DropdownMenu(
+                                    expanded = showGoalMenu,
+                                    onDismissRequest = { showGoalMenu = false }
+                                ) {
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Edit") },
+                                        onClick = {
+                                            showGoalMenu = false
+                                            showEditGoal = goal
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                                    )
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                        onClick = {
+                                            showGoalMenu = false
+                                            showDeleteGoal = goal
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                                    )
+                                }
+                            }
+                        }
+                    )
                 }
-            )
+            }
         },
         containerColor = colorScheme.background,
         floatingActionButton = {
@@ -155,6 +212,41 @@ fun GoalTrackerScreen(
             onSubmit = { cat, name, cost, targetDate, savings ->
                 viewModel.createGoal(cat, name, cost, targetDate, savings)
                 showAddGoal = false
+            }
+        )
+    }
+    showEditGoal?.let { goal ->
+        EditGoalDialog(
+            goal = goal,
+            onDismiss = { showEditGoal = null },
+            onSubmit = { cost, targetDate, savings ->
+                viewModel.updateGoal(goal.goal_id, cost, targetDate, savings)
+                showEditGoal = null
+                selectedGoal = null
+            }
+        )
+    }
+    showDeleteGoal?.let { goal ->
+        AlertDialog(
+            onDismissRequest = { showDeleteGoal = null },
+            title = { Text("Delete Goal?", color = MaterialTheme.colorScheme.onSurface) },
+            text = { Text("Are you sure you want to delete \"${goal.goal_name}\"? This cannot be undone.", color = MaterialTheme.colorScheme.onSurface) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteGoal(goal.goal_id)
+                        showDeleteGoal = null
+                        selectedGoal = null
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteGoal = null }) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurface)
+                }
             }
         )
     }
@@ -867,6 +959,107 @@ private fun AddGoalDialog(
                         )
                     ) {
                         Text("Add")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditGoalDialog(
+    goal: GoalResponse,
+    onDismiss: () -> Unit,
+    onSubmit: (Double?, String?, Double?) -> Unit
+) {
+    var estimatedCost by remember { mutableStateOf(goal.estimated_cost.toString()) }
+    var targetDate by remember { mutableStateOf(goal.target_date ?: "") }
+    var currentSavings by remember { mutableStateOf(goal.current_savings.toString()) }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth()
+            ) {
+                Text(
+                    "Edit Goal",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    goal.goal_name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                )
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = estimatedCost,
+                    onValueChange = { estimatedCost = it },
+                    label = { Text("Target amount (₹)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = targetDate,
+                    onValueChange = { targetDate = it },
+                    label = { Text("Target date (YYYY-MM-DD, optional)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = currentSavings,
+                    onValueChange = { currentSavings = it },
+                    label = { Text("Current savings (₹)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    }
+                    Button(
+                        onClick = {
+                            val cost = estimatedCost.toDoubleOrNull()
+                            val savings = currentSavings.toDoubleOrNull()
+                            val dateStr = targetDate.takeIf { it.isNotBlank() }
+                            if (cost != null && cost > 0) {
+                                onSubmit(cost, dateStr, savings)
+                            }
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Save")
                     }
                 }
             }

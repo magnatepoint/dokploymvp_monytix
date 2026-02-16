@@ -1,5 +1,6 @@
 package com.example.monytix.datasupport
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.monytix.data.BackendApi
@@ -34,7 +35,8 @@ data class DataSetupUiState(
     val parsedCount: Int = 0,
     val manualAddType: ManualAddType? = null,
     val kpis: KpiResponse? = null,
-    val analyzingProgress: Float = 0f
+    val analyzingProgress: Float = 0f,
+    val pendingRetryFile: Pair<ByteArray, String>? = null
 )
 
 enum class ManualAddType { INCOME, EXPENSE, LOAN, INVESTMENT }
@@ -49,8 +51,12 @@ class DataSetupViewModel : ViewModel() {
 
     fun showUploadStatement() {
         _uiState.update {
-            it.copy(step = DataSetupStep.UploadStatement, error = null, selectedFile = null)
+            it.copy(step = DataSetupStep.UploadStatement, error = null, selectedFile = null, pendingRetryFile = null)
         }
+    }
+
+    fun clearPendingRetry() {
+        _uiState.update { it.copy(pendingRetryFile = null) }
     }
 
     fun showManualAdd(type: ManualAddType? = null) {
@@ -60,6 +66,7 @@ class DataSetupViewModel : ViewModel() {
     }
 
     fun uploadFile(fileBytes: ByteArray, filename: String, pdfPassword: String? = null) {
+        Log.d("MonytixUpload", "DataSetupViewModel.uploadFile: filename=$filename bytes=${fileBytes.size}")
         val token = getAccessToken()
         if (token == null) {
             _uiState.update { it.copy(error = "Not signed in") }
@@ -71,7 +78,7 @@ class DataSetupViewModel : ViewModel() {
             return
         }
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = true, error = null, pendingRetryFile = Pair(fileBytes, filename)) }
             val result = BackendApi.uploadStatement(token, fileBytes, filename, pdfPassword)
             result.fold(
                 onSuccess = { batch ->
@@ -111,7 +118,8 @@ class DataSetupViewModel : ViewModel() {
                                 _uiState.update {
                                     it.copy(
                                         step = DataSetupStep.DataImportedSuccess,
-                                        parsedCount = 0
+                                        parsedCount = 0,
+                                        pendingRetryFile = null
                                     )
                                 }
                                 return@launch

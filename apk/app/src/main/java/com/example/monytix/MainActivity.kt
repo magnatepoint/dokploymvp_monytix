@@ -1,7 +1,12 @@
 package com.example.monytix
 
+import android.net.Uri
 import android.os.Bundle
+import android.util.Log
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,11 +28,16 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -47,20 +57,61 @@ import com.example.monytix.goaltracker.GoalTrackerScreen
 import com.example.monytix.moneymoments.MoneyMomentsScreen
 import com.example.monytix.home.HomeScreen
 import com.example.monytix.profile.ProfileScreen
+import com.example.monytix.spendsense.PendingManualAddHolder
+import com.example.monytix.spendsense.PendingUploadHolder
 import com.example.monytix.ui.theme.MonytixTheme
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.handleDeeplinks
 import io.github.jan.supabase.auth.status.SessionStatus
 
 class MainActivity : ComponentActivity() {
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        Log.d("MonytixUpload", "Activity file picker callback: uri=$uri")
+        uri?.let { u ->
+            lifecycleScope.launch {
+                try {
+                    Log.d("MonytixUpload", "Reading file from uri=$u")
+                    val result = withContext(Dispatchers.IO) {
+                        var name = u.lastPathSegment ?: "statement.pdf"
+                        contentResolver.query(u, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                                if (idx >= 0) cursor.getString(idx)?.takeIf { n -> n.isNotBlank() }?.let { name = it }
+                            }
+                        }
+                        val b = contentResolver.openInputStream(u)?.use { stream -> stream.readBytes() }
+                        if (b != null && b.isNotEmpty()) Pair(b, name) else null
+                    }
+                    if (result != null) {
+                        Log.d("MonytixUpload", "File read ok: filename=${result.second}, bytes=${result.first.size}")
+                        PendingUploadHolder.state.value = result
+                    } else {
+                        Log.w("MonytixUpload", "File read returned null or empty")
+                    }
+                } catch (e: Exception) {
+                    Log.e("MonytixUpload", "File read failed", e)
+                }
+            }
+        } ?: Log.w("MonytixUpload", "File picker returned null uri")
+    }
+
+    fun launchFilePicker() {
+        Log.d("MonytixUpload", "Activity.launchFilePicker()")
+        filePickerLauncher.launch("*/*")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        val splashScreen = installSplashScreen()
+        var keepSplash = true
+        splashScreen.setKeepOnScreenCondition { keepSplash }
         Supabase.client.handleDeeplinks(intent)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             MonytixTheme {
-                MonytixApp()
+                MonytixApp(onSessionReady = { keepSplash = false })
             }
         }
     }
@@ -77,9 +128,17 @@ fun MonytixApp(
     preAuthViewModel: PreAuthViewModel = viewModel(
         factory = PreAuthViewModelFactory(LocalContext.current.applicationContext as android.app.Application)
     ),
-    authViewModel: AuthViewModel = viewModel()
+    authViewModel: AuthViewModel = viewModel(),
+    onSessionReady: () -> Unit = {}
 ) {
     val sessionStatus by Supabase.client.auth.sessionStatus.collectAsState(initial = SessionStatus.Initializing)
+
+    LaunchedEffect(sessionStatus) {
+        if (sessionStatus !is SessionStatus.Initializing) {
+            delay(150) // Allow first frame to compose before dismissing splash
+            onSessionReady()
+        }
+    }
 
     if (sessionStatus is SessionStatus.Authenticated) {
         PostAuthGate()
@@ -94,6 +153,14 @@ fun MonytixApp(
 @Composable
 internal fun MainContent() {
     var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
+    val pendingUpload by PendingUploadHolder.state
+    val context = LocalContext.current
+    LaunchedEffect(pendingUpload) {
+        if (pendingUpload != null) {
+            Log.d("MonytixUpload", "Pending upload set, switching to DATA tab")
+            currentDestination = AppDestinations.DATA
+        }
+    }
 
     NavigationSuiteScaffold(
         navigationSuiteItems = {
@@ -121,8 +188,18 @@ internal fun MainContent() {
                 label = "screen_transition"
             ) { destination ->
                 when (destination) {
-                    AppDestinations.HOME -> HomeScreen(modifier = Modifier.padding(innerPadding))
-                    AppDestinations.DATA -> SpendSenseScreen(modifier = Modifier.padding(innerPadding))
+                    AppDestinations.HOME -> HomeScreen(
+                        modifier = Modifier.padding(innerPadding),
+                        onLaunchFilePicker = { (context as? MainActivity)?.launchFilePicker() },
+                        onAddTransaction = {
+                            currentDestination = AppDestinations.DATA
+                            PendingManualAddHolder.state.value = true
+                        }
+                    )
+                    AppDestinations.DATA -> SpendSenseScreen(
+                        modifier = Modifier.padding(innerPadding),
+                        onLaunchFilePicker = { (context as? MainActivity)?.launchFilePicker() }
+                    )
                     AppDestinations.GOALS -> GoalTrackerScreen(
                         modifier = Modifier.padding(innerPadding),
                         onNavigateTo = { currentDestination = it }
