@@ -296,6 +296,7 @@ async def get_goals_progress(
                     "projected_completion_date": projected_date,
                     "milestones": milestones_list,
                     "monthly_required": item.get("monthly_required"),
+                    "monthly_avg_contribution": item.get("monthly_avg_contribution"),
                     "pace_description": item.get("pace_description"),
                     "days_to_target": item.get("days_to_target"),
                 }

@@ -530,6 +530,25 @@ class GoalsService:
                     estimated_cost = float(goal.get("estimated_cost", 0.0))
                     remaining = max(estimated_cost - current_savings, 0.0)
                     target_date = goal.get("target_date")
+
+                    # Monthly avg contribution: current_savings / months_since_creation
+                    monthly_avg_contribution = None
+                    created_at_val = goal.get("created_at")
+                    if created_at_val and current_savings > 0:
+                        created_date = None
+                        if isinstance(created_at_val, str):
+                            try:
+                                created_date = date.fromisoformat(created_at_val[:10])
+                            except (ValueError, TypeError):
+                                pass
+                        elif hasattr(created_at_val, "date"):
+                            created_date = created_at_val.date()
+                        elif isinstance(created_at_val, date):
+                            created_date = created_at_val
+                        if created_date:
+                            days_elapsed = max((today - created_date).days, 1)
+                            months_elapsed = max(days_elapsed / 30.0, 0.1)
+                            monthly_avg_contribution = round(current_savings / months_elapsed, 0)
                     if isinstance(target_date, str) and target_date:
                         try:
                             target_date = date.fromisoformat(target_date)
@@ -568,6 +587,7 @@ class GoalsService:
                         "projected_completion_date": projected_date,
                         "milestones": milestones,
                         "monthly_required": monthly_required,
+                        "monthly_avg_contribution": monthly_avg_contribution,
                         "pace_description": pace_description,
                         "days_to_target": days_to_target,
                     })

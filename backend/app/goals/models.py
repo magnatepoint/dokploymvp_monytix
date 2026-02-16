@@ -193,6 +193,7 @@ class GoalProgressItem(BaseModel):
     projected_completion_date: date | None = Field(None, description="Projected completion date")
     milestones: list[int] = Field(default_factory=list, description="List of milestone percentages achieved (e.g., [25, 50])")
     monthly_required: float | None = Field(None, description="Monthly amount needed to finish by target date")
+    monthly_avg_contribution: float | None = Field(None, description="Actual average monthly contribution from savings growth")
     pace_description: str | None = Field(None, description="e.g. 'You'll finish in 3.2 months' or 'Behind schedule by 12 days'")
     days_to_target: int | None = Field(None, description="Days until target date")
 

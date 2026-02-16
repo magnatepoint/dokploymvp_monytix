@@ -44,6 +44,7 @@ data class BudgetPilotUiState(
     val lastUpdatedAt: String? = null,
     val userEmail: String? = null,
     val selectedMonth: String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE).substring(0, 7),
+    val goalsCount: Int = 0,
     val isLoadingRecommendations: Boolean = false,
     val isLoadingCommitted: Boolean = false,
     val isLoadingVariance: Boolean = false,
@@ -103,9 +104,9 @@ class BudgetPilotViewModel : ViewModel() {
                 )
             }
 
-            val stateResult = withContext(Dispatchers.IO) {
-                BackendApi.getBudgetState(token, monthParam)
-            }
+            val stateResult = withContext(Dispatchers.IO) { BackendApi.getBudgetState(token, monthParam) }
+            val goalsResult = withContext(Dispatchers.IO) { BackendApi.getUserGoals(token) }
+            val goalsCount = goalsResult.getOrNull()?.count { it.status.lowercase() == "active" } ?: 0
 
             stateResult.fold(
                 onSuccess = { state ->
@@ -167,6 +168,7 @@ class BudgetPilotViewModel : ViewModel() {
                             autopilotSuggestion = suggestion,
                             recommendations = recommendations,
                             lastUpdatedAt = state.last_updated_at,
+                            goalsCount = goalsCount,
                             isLoadingState = false,
                             isLoadingRecommendations = false,
                             isLoadingCommitted = false,

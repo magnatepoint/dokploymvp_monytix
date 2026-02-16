@@ -123,8 +123,14 @@ internal fun MainContent() {
                 when (destination) {
                     AppDestinations.HOME -> HomeScreen(modifier = Modifier.padding(innerPadding))
                     AppDestinations.DATA -> SpendSenseScreen(modifier = Modifier.padding(innerPadding))
-                    AppDestinations.GOALS -> GoalTrackerScreen(modifier = Modifier.padding(innerPadding))
-                    AppDestinations.BUDGET -> BudgetPilotScreen(modifier = Modifier.padding(innerPadding))
+                    AppDestinations.GOALS -> GoalTrackerScreen(
+                        modifier = Modifier.padding(innerPadding),
+                        onNavigateTo = { currentDestination = it }
+                    )
+                    AppDestinations.BUDGET -> BudgetPilotScreen(
+                        modifier = Modifier.padding(innerPadding),
+                        onNavigateTo = { currentDestination = it }
+                    )
                     AppDestinations.FAVORITES -> MoneyMomentsScreen(modifier = Modifier.padding(innerPadding))
                     AppDestinations.PROFILE -> ProfileScreen(modifier = Modifier.padding(innerPadding))
                 }

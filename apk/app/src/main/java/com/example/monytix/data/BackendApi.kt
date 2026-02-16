@@ -820,6 +820,7 @@ data class GoalProgressItem(
     val projected_completion_date: String? = null,
     val milestones: List<Int> = emptyList(),
     val monthly_required: Double? = null,
+    val monthly_avg_contribution: Double? = null,
     val pace_description: String? = null,
     val days_to_target: Int? = null
 )

@@ -3,6 +3,7 @@ package com.example.monytix.goaltracker
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -68,12 +69,14 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun GoalTrackerScreen(
     viewModel: GoalTrackerViewModel = viewModel(),
+    onNavigateTo: (com.example.monytix.AppDestinations) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(GtTab.OVERVIEW) }
     val colorScheme = MaterialTheme.colorScheme
     var showAddGoal by remember { mutableStateOf(false) }
+    var selectedGoal by remember { mutableStateOf<Pair<GoalResponse, GoalProgressItem?>?>(null) }
 
     Scaffold(
         topBar = {
@@ -101,10 +104,9 @@ fun GoalTrackerScreen(
             }
         }
     ) { innerPadding ->
+        Box(modifier = modifier.fillMaxSize().padding(innerPadding)) {
         Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+            modifier = Modifier.fillMaxSize()
         ) {
             WelcomeBanner(username = uiState.userEmail)
             if (uiState.lastSyncTime > 0) {
@@ -128,14 +130,25 @@ fun GoalTrackerScreen(
                 onRefresh = { viewModel.refresh() }
             ) {
                 when (selectedTab) {
-                    GtTab.OVERVIEW -> OverviewTab(viewModel = viewModel)
-                    GtTab.GOALS -> GoalsListTab(viewModel = viewModel)
+                    GtTab.OVERVIEW -> OverviewTab(viewModel = viewModel, onGoalClick = { g, p -> selectedGoal = g to p })
+                    GtTab.GOALS -> GoalsListTab(viewModel = viewModel, onGoalClick = { g, p -> selectedGoal = g to p })
                     GtTab.AI_INSIGHTS -> AIInsightsTab(viewModel = viewModel)
                 }
             }
         }
+        }
+        selectedGoal?.let { (goal, prog) ->
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                GoalDetailScreen(
+                    goal = goal,
+                    progress = prog,
+                    viewModel = viewModel,
+                    onDismiss = { selectedGoal = null },
+                    onNavigateToBudget = { onNavigateTo(com.example.monytix.AppDestinations.BUDGET) }
+                )
+            }
+        }
     }
-
     if (showAddGoal) {
         AddGoalDialog(
             onDismiss = { showAddGoal = false },
@@ -207,7 +220,10 @@ private fun TabBar(selectedTab: GtTab, onTabSelected: (GtTab) -> Unit) {
 }
 
 @Composable
-private fun OverviewTab(viewModel: GoalTrackerViewModel) {
+private fun OverviewTab(
+    viewModel: GoalTrackerViewModel,
+    onGoalClick: (GoalResponse, GoalProgressItem?) -> Unit = { _, _ -> }
+) {
     val uiState by viewModel.uiState.collectAsState()
 
     if (uiState.isLoading && uiState.goals.isEmpty()) {
@@ -261,7 +277,7 @@ private fun OverviewTab(viewModel: GoalTrackerViewModel) {
             }
             items(deadlines.size) { i ->
                 val (goal, prog) = deadlines[i]
-                UpcomingDeadlineCard(goal = goal, progress = prog, viewModel = viewModel)
+                UpcomingDeadlineCard(goal = goal, progress = prog, viewModel = viewModel, onClick = { onGoalClick(goal, prog) })
             }
         }
         item {
@@ -298,14 +314,17 @@ private fun OverviewTab(viewModel: GoalTrackerViewModel) {
             items(activeGoals, key = { it.goal_id }) { goal ->
                 val prog = uiState.progress.find { it.goal_id == goal.goal_id }
                 val animateFromPct = uiState.recentlyUpdatedGoalPrevPct[goal.goal_id]
-                GoalCard(goal = goal, progress = prog, viewModel = viewModel, animateFromPct = animateFromPct)
+                GoalCard(goal = goal, progress = prog, viewModel = viewModel, animateFromPct = animateFromPct, onClick = { onGoalClick(goal, prog) })
             }
         }
     }
 }
 
 @Composable
-private fun GoalsListTab(viewModel: GoalTrackerViewModel) {
+private fun GoalsListTab(
+    viewModel: GoalTrackerViewModel,
+    onGoalClick: (GoalResponse, GoalProgressItem?) -> Unit = { _, _ -> }
+) {
     val uiState by viewModel.uiState.collectAsState()
     val filter = uiState.selectedFilter
     val filteredGoals = when (filter?.lowercase()) {
@@ -369,7 +388,7 @@ private fun GoalsListTab(viewModel: GoalTrackerViewModel) {
             items(filteredGoals, key = { it.goal_id }) { goal ->
                 val prog = uiState.progress.find { it.goal_id == goal.goal_id }
                 val animateFromPct = uiState.recentlyUpdatedGoalPrevPct[goal.goal_id]
-                GoalCard(goal = goal, progress = prog, viewModel = viewModel, animateFromPct = animateFromPct)
+                GoalCard(goal = goal, progress = prog, viewModel = viewModel, animateFromPct = animateFromPct, onClick = { onGoalClick(goal, prog) })
             }
         }
     }
@@ -515,11 +534,16 @@ private fun GoalHealthCard(health: GoalTrackerViewModel.GoalHealthSummary) {
 }
 
 @Composable
-private fun UpcomingDeadlineCard(goal: GoalResponse, progress: GoalProgressItem?, viewModel: GoalTrackerViewModel) {
+private fun UpcomingDeadlineCard(
+    goal: GoalResponse,
+    progress: GoalProgressItem?,
+    viewModel: GoalTrackerViewModel,
+    onClick: () -> Unit = {}
+) {
     val days = progress?.days_to_target ?: 0
     val monthlyReq = progress?.monthly_required ?: 0.0
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = GlassCard),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -536,7 +560,13 @@ private fun UpcomingDeadlineCard(goal: GoalResponse, progress: GoalProgressItem?
 }
 
 @Composable
-private fun GoalCard(goal: GoalResponse, progress: GoalProgressItem?, viewModel: GoalTrackerViewModel, animateFromPct: Float? = null) {
+private fun GoalCard(
+    goal: GoalResponse,
+    progress: GoalProgressItem?,
+    viewModel: GoalTrackerViewModel,
+    animateFromPct: Float? = null,
+    onClick: () -> Unit = {}
+) {
     val progressPct = progress?.progress_pct ?: 0.0
     val remaining = progress?.remaining_amount ?: (goal.estimated_cost - goal.current_savings).coerceAtLeast(0.0)
     val animProgress = remember { Animatable(animateFromPct?.div(100f) ?: 0f) }
@@ -558,7 +588,7 @@ private fun GoalCard(goal: GoalResponse, progress: GoalProgressItem?, viewModel:
         else -> Success
     }
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = GlassCard),
         shape = RoundedCornerShape(16.dp),
         border = if (showGlow) BorderStroke(2.dp, AccentPrimary.copy(alpha = glowAlpha.value)) else null
