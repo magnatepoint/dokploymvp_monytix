@@ -42,6 +42,12 @@ services:
     container_name: mvp-celery-worker
     restart: unless-stopped
     command: celery -A app.celery_app worker --loglevel=info --concurrency=4
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
     env_file:
@@ -71,6 +77,12 @@ services:
     container_name: mvp-celery-beat
     restart: unless-stopped
     command: celery -A app.celery_app beat -s /tmp/celerybeat-schedule --loglevel=info
+    healthcheck:
+      test: ["CMD", "sh", "-c", "cat /proc/1/cmdline 2>/dev/null | tr '\\0' ' ' | grep -q celery"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
     env_file:
