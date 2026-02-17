@@ -18,9 +18,12 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
+import io.ktor.http.content.TextContent
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -220,7 +223,7 @@ object BackendApi {
         importance: Int? = null
     ): Result<CreateGoalResponse> = withContext(Dispatchers.IO) {
         try {
-            val body = buildMap<String, Any?> {
+            val body = buildJsonObject {
                 put("goal_category", goalCategory)
                 put("goal_name", goalName)
                 put("estimated_cost", estimatedCost)
@@ -232,7 +235,7 @@ object BackendApi {
             val response = client.post("$baseUrl/v1/goals") {
                 header("Authorization", "Bearer $accessToken")
                 contentType(io.ktor.http.ContentType.Application.Json)
-                setBody(body)
+                setBody(TextContent(Json.encodeToString(body), io.ktor.http.ContentType.Application.Json))
             }.body<CreateGoalResponse>()
             Result.success(response)
         } catch (e: Exception) {
@@ -271,7 +274,7 @@ object BackendApi {
         importance: Int? = null
     ): Result<GoalResponse> = withContext(Dispatchers.IO) {
         try {
-            val body = buildMap<String, Any?> {
+            val body = buildJsonObject {
                 estimatedCost?.let { put("estimated_cost", it) }
                 targetDate?.let { put("target_date", it) }
                 currentSavings?.let { put("current_savings", it) }
@@ -281,7 +284,7 @@ object BackendApi {
             val response = client.put("$baseUrl/v1/goals/$goalId") {
                 header("Authorization", "Bearer $accessToken")
                 contentType(io.ktor.http.ContentType.Application.Json)
-                setBody(body)
+                setBody(TextContent(Json.encodeToString(body), io.ktor.http.ContentType.Application.Json))
             }.body<GoalResponse>()
             Result.success(response)
         } catch (e: Exception) {

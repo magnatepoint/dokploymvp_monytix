@@ -13,86 +13,42 @@ class GoalsRepository:
         self.conn = conn
 
     async def create_goal(self, user_id: UUID, goal_data: dict[str, Any]) -> dict[str, Any]:
-        """Create a new goal and return it."""
-        try:
-            goal_id = await self.conn.fetchval(
-                """
-                INSERT INTO goal.user_goals_master (
-                    user_id, goal_category, goal_name, goal_type,
-                    estimated_cost, target_date, current_savings,
-                    importance, status, notes, is_must_have,
-                    timeline_flexibility, risk_profile_for_goal
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                RETURNING goal_id
-                """,
-                user_id,
-                goal_data["goal_category"],
-                goal_data["goal_name"],
-                goal_data.get("goal_type", "user_defined"),
-                goal_data["estimated_cost"],
-                goal_data.get("target_date"),
-                goal_data.get("current_savings", 0.0),
-                goal_data.get("importance"),
-                goal_data.get("status", "active"),
-                goal_data.get("notes"),
-                goal_data.get("is_must_have", True),
-                goal_data.get("timeline_flexibility"),
-                goal_data.get("risk_profile_for_goal"),
-            )
-        except Exception:
-            # Fallback if enhanced columns don't exist yet
-            goal_id = await self.conn.fetchval(
-                """
-                INSERT INTO goal.user_goals_master (
-                    user_id, goal_category, goal_name, goal_type,
-                    estimated_cost, target_date, current_savings,
-                    importance, status, notes
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                RETURNING goal_id
-                """,
-                user_id,
-                goal_data["goal_category"],
-                goal_data["goal_name"],
-                goal_data.get("goal_type", "user_defined"),
-                goal_data["estimated_cost"],
-                goal_data.get("target_date"),
-                goal_data.get("current_savings", 0.0),
-                goal_data.get("importance"),
-                goal_data.get("status", "active"),
-                goal_data.get("notes"),
-            )
+        """Create a new goal and return it. Uses base columns for schema compatibility."""
+        goal_id = await self.conn.fetchval(
+            """
+            INSERT INTO goal.user_goals_master (
+                user_id, goal_category, goal_name, goal_type,
+                estimated_cost, target_date, current_savings,
+                importance, status, notes
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING goal_id
+            """,
+            user_id,
+            goal_data["goal_category"],
+            goal_data["goal_name"],
+            goal_data.get("goal_type", "medium_term"),
+            goal_data["estimated_cost"],
+            goal_data.get("target_date"),
+            goal_data.get("current_savings", 0.0),
+            goal_data.get("importance"),
+            goal_data.get("status", "active"),
+            goal_data.get("notes"),
+        )
         return await self.get_goal(user_id, goal_id)
 
     async def get_goal(self, user_id: UUID, goal_id: UUID) -> dict[str, Any] | None:
-        """Get a single goal by ID."""
-        try:
-            row = await self.conn.fetchrow(
-                """
-                SELECT goal_id, goal_category, goal_name, goal_type, linked_txn_type,
-                       linked_category_code, linked_subcategory_code, linked_direction,
-                       linked_min_amount, linked_match_confidence,
-                       estimated_cost, target_date, current_savings, importance,
-                       priority_rank, status, notes, is_must_have, timeline_flexibility,
-                       risk_profile_for_goal, created_at, updated_at
-                FROM goal.user_goals_master
-                WHERE user_id = $1 AND goal_id = $2
-                """,
-                user_id,
-                goal_id,
-            )
-        except Exception:
-            # Fallback if enhanced columns don't exist yet
-            row = await self.conn.fetchrow(
-                """
-                SELECT goal_id, goal_category, goal_name, goal_type, linked_txn_type,
-                       estimated_cost, target_date, current_savings, importance,
-                       priority_rank, status, notes, created_at, updated_at
-                FROM goal.user_goals_master
-                WHERE user_id = $1 AND goal_id = $2
-                """,
-                user_id,
-                goal_id,
-            )
+        """Get a single goal by ID. Uses base columns for compatibility with schemas before extended migrations."""
+        row = await self.conn.fetchrow(
+            """
+            SELECT goal_id, goal_category, goal_name, goal_type, linked_txn_type,
+                   estimated_cost, target_date, current_savings, importance,
+                   priority_rank, status, notes, created_at, updated_at
+            FROM goal.user_goals_master
+            WHERE user_id = $1 AND goal_id = $2
+            """,
+            user_id,
+            goal_id,
+        )
         
         if row:
             result = dict(row)
@@ -113,35 +69,18 @@ class GoalsRepository:
         return None
 
     async def list_goals(self, user_id: UUID) -> list[dict[str, Any]]:
-        """List all goals for a user, ordered by priority."""
-        try:
-            rows = await self.conn.fetch(
-                """
-                SELECT goal_id, goal_category, goal_name, goal_type, linked_txn_type,
-                       linked_category_code, linked_subcategory_code, linked_direction,
-                       linked_min_amount, linked_match_confidence,
-                       estimated_cost, target_date, current_savings, importance,
-                       priority_rank, status, notes, is_must_have, timeline_flexibility,
-                       risk_profile_for_goal, created_at, updated_at
-                FROM goal.user_goals_master
-                WHERE user_id = $1 AND status != 'cancelled'
-                ORDER BY priority_rank ASC NULLS LAST, target_date ASC NULLS LAST
-                """,
-                user_id,
-            )
-        except Exception:
-            # Fallback if enhanced columns don't exist yet
-            rows = await self.conn.fetch(
-                """
-                SELECT goal_id, goal_category, goal_name, goal_type, linked_txn_type,
-                       estimated_cost, target_date, current_savings, importance,
-                       priority_rank, status, notes, created_at, updated_at
-                FROM goal.user_goals_master
-                WHERE user_id = $1 AND status != 'cancelled'
-                ORDER BY priority_rank ASC NULLS LAST, target_date ASC NULLS LAST
-                """,
-                user_id,
-            )
+        """List all goals for a user, ordered by priority. Uses base columns for schema compatibility."""
+        rows = await self.conn.fetch(
+            """
+            SELECT goal_id, goal_category, goal_name, goal_type, linked_txn_type,
+                   estimated_cost, target_date, current_savings, importance,
+                   priority_rank, status, notes, created_at, updated_at
+            FROM goal.user_goals_master
+            WHERE user_id = $1 AND status != 'cancelled'
+            ORDER BY priority_rank ASC NULLS LAST, target_date ASC NULLS LAST
+            """,
+            user_id,
+        )
         
         result = []
         for row in rows:
