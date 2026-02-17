@@ -85,7 +85,7 @@ async def refresh_budget_aggregate(
             FROM actuals a
             LEFT JOIN plan p ON a.user_id = p.user_id AND a.month = p.month
             UNION
-            SELECT p.user_id, p.month, 0::double precision, 0::double precision, 0::double precision, 0::double precision,
+            SELECT p.user_id, p.month, 0::numeric, 0::numeric, 0::numeric, 0::numeric,
                    p.alloc_needs_pct, p.alloc_wants_pct, p.alloc_assets_pct
             FROM plan p
             WHERE NOT EXISTS (SELECT 1 FROM actuals a2 WHERE a2.user_id = p.user_id AND a2.month = p.month)
