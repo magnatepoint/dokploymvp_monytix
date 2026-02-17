@@ -331,7 +331,7 @@ class GoalsService:
                 raise ValueError("Failed to update goal")
 
             # Recompute priority ranks if importance or other priority-affecting fields changed
-            if any(key in updates for key in ["importance", "is_must_have", "timeline_flexibility"]):
+            if any(key in updates for key in ["importance", "goal_type", "is_must_have", "timeline_flexibility"]):
                 all_goals = await repo.list_goals(user_id)
                 goal_dicts = [
                     {

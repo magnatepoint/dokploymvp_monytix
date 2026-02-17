@@ -6,7 +6,7 @@ from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.auth.dependencies import get_current_user
 from app.auth.models import AuthenticatedUser
@@ -132,6 +132,21 @@ class CreateGoalRequest(BaseModel):
     estimated_cost: float = Field(..., gt=0, description="Target amount in INR")
     target_date: date | None = None
     current_savings: float = Field(default=0.0, ge=0)
+    goal_type: str | None = Field(
+        None,
+        description="short_term, medium_term, or long_term",
+    )
+    importance: int | None = Field(None, ge=1, le=5, description="Priority 1-5 (1=low, 5=high)")
+
+    @field_validator("goal_type")
+    @classmethod
+    def validate_goal_type(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        allowed = {"short_term", "medium_term", "long_term"}
+        if v not in allowed:
+            raise ValueError(f"goal_type must be one of {allowed}")
+        return v
 
 
 @router.post("", response_model=dict, summary="Create a single goal")
@@ -148,7 +163,8 @@ async def create_goal(
             "estimated_cost": payload.estimated_cost,
             "target_date": payload.target_date.isoformat() if payload.target_date else None,
             "current_savings": payload.current_savings,
-            "importance": 3,
+            "goal_type": payload.goal_type,
+            "importance": payload.importance if payload.importance is not None else 3,
         }]
         created = await service.create_goals(safe_user_id(user), goals_data)
         return {"status": "created", "goal_id": created[0]["goal_id"] if created else None}

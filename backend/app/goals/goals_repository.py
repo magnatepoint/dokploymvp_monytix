@@ -187,6 +187,7 @@ class GoalsRepository:
             "estimated_cost": "estimated_cost",
             "target_date": "target_date",
             "current_savings": "current_savings",
+            "goal_type": "goal_type",
             "importance": "importance",
             "notes": "notes",
             "priority_rank": "priority_rank",

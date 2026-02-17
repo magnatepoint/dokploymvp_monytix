@@ -17,12 +17,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+sealed class CreateGoalResult {
+    data object Success : CreateGoalResult()
+    data class Failure(val message: String) : CreateGoalResult()
+}
+
 data class GoalTrackerUiState(
     val goals: List<GoalResponse> = emptyList(),
     val progress: List<GoalProgressItem> = emptyList(),
     val userEmail: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
+    val createGoalResult: CreateGoalResult? = null,
     val selectedFilter: String? = null,
     val recentlyUpdatedGoalPrevPct: Map<String, Float> = emptyMap(),
     val lastSyncTime: Long = 0L
@@ -91,29 +97,44 @@ class GoalTrackerViewModel : ViewModel() {
         _uiState.update { it.copy(error = null) }
     }
 
+    fun clearCreateGoalResult() {
+        _uiState.update { it.copy(createGoalResult = null) }
+    }
+
     fun createGoal(
         goalCategory: String,
         goalName: String,
         estimatedCost: Double,
         targetDate: String?,
-        currentSavings: Double
+        currentSavings: Double,
+        goalType: String? = null,
+        importance: Int? = null
     ) {
         viewModelScope.launch {
-            val token = getAccessToken() ?: return@launch
+            val token = getAccessToken()
+            if (token == null) {
+                _uiState.update {
+                    it.copy(
+                        createGoalResult = CreateGoalResult.Failure("Please sign in to add goals")
+                    )
+                }
+                return@launch
+            }
             _uiState.update { it.copy(isLoading = true, error = null) }
             val result = withContext(Dispatchers.IO) {
-                BackendApi.createGoal(token, goalCategory, goalName, estimatedCost, targetDate, currentSavings)
+                BackendApi.createGoal(token, goalCategory, goalName, estimatedCost, targetDate, currentSavings, goalType, importance)
             }
             result.fold(
                 onSuccess = {
-                    _uiState.update { it.copy(isLoading = false) }
+                    _uiState.update { it.copy(isLoading = false, createGoalResult = CreateGoalResult.Success) }
                     loadData()
                 },
                 onFailure = { e ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            error = e.message ?: "Failed to add goal"
+                            error = e.message ?: "Failed to add goal",
+                            createGoalResult = CreateGoalResult.Failure(e.message ?: "Failed to add goal")
                         )
                     }
                 }
@@ -125,13 +146,15 @@ class GoalTrackerViewModel : ViewModel() {
         goalId: String,
         estimatedCost: Double? = null,
         targetDate: String? = null,
-        currentSavings: Double? = null
+        currentSavings: Double? = null,
+        goalType: String? = null,
+        importance: Int? = null
     ) {
         viewModelScope.launch {
             val token = getAccessToken() ?: return@launch
             _uiState.update { it.copy(isLoading = true, error = null) }
             val result = withContext(Dispatchers.IO) {
-                BackendApi.updateGoal(token, goalId, estimatedCost, targetDate, currentSavings)
+                BackendApi.updateGoal(token, goalId, estimatedCost, targetDate, currentSavings, goalType, importance)
             }
             result.fold(
                 onSuccess = {

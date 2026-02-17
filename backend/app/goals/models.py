@@ -175,11 +175,23 @@ class GoalUpdateRequest(BaseModel):
     estimated_cost: float | None = Field(None, gt=0)
     target_date: date | None = None
     current_savings: float | None = Field(None, ge=0)
+    goal_type: str | None = Field(None, description="short_term, medium_term, or long_term")
     importance: int | None = Field(None, ge=1, le=5)
+
     notes: str | None = None
     is_must_have: bool | None = None
     timeline_flexibility: TimelineFlexibility | None = None
     risk_profile_for_goal: RiskProfile | None = None
+
+    @field_validator("goal_type")
+    @classmethod
+    def validate_goal_type(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        allowed = {"short_term", "medium_term", "long_term"}
+        if v not in allowed:
+            raise ValueError(f"goal_type must be one of {allowed}")
+        return v
 
 
 class GoalProgressItem(BaseModel):

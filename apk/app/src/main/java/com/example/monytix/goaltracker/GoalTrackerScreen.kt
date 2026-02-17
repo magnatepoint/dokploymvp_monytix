@@ -41,6 +41,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,8 +58,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -68,6 +77,10 @@ import com.example.monytix.ui.theme.ChartOrange
 import com.example.monytix.ui.theme.ChartPurple
 import com.example.monytix.ui.theme.GlassCard
 import com.example.monytix.ui.theme.Success
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,8 +97,20 @@ fun GoalTrackerScreen(
     var selectedGoal by remember { mutableStateOf<Pair<GoalResponse, GoalProgressItem?>?>(null) }
     var showEditGoal by remember { mutableStateOf<GoalResponse?>(null) }
     var showDeleteGoal by remember { mutableStateOf<GoalResponse?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.error, uiState.goals.isEmpty()) {
+        if (uiState.error != null && uiState.goals.isNotEmpty()) {
+            snackbarHostState.showSnackbar(
+                uiState.error ?: "Something went wrong",
+                duration = SnackbarDuration.Long
+            )
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(it) } },
         topBar = {
             when (val sel = selectedGoal) {
                 null -> androidx.compose.material3.TopAppBar(
@@ -187,8 +212,8 @@ fun GoalTrackerScreen(
                 onRefresh = { viewModel.refresh() }
             ) {
                 when (selectedTab) {
-                    GtTab.OVERVIEW -> OverviewTab(viewModel = viewModel, onGoalClick = { g, p -> selectedGoal = g to p })
-                    GtTab.GOALS -> GoalsListTab(viewModel = viewModel, onGoalClick = { g, p -> selectedGoal = g to p })
+                    GtTab.OVERVIEW -> OverviewTab(viewModel = viewModel, onGoalClick = { g, p -> selectedGoal = g to p }, onAddGoal = { showAddGoal = true })
+                    GtTab.GOALS -> GoalsListTab(viewModel = viewModel, onGoalClick = { g, p -> selectedGoal = g to p }, onAddGoal = { showAddGoal = true })
                     GtTab.AI_INSIGHTS -> AIInsightsTab(viewModel = viewModel)
                 }
             }
@@ -206,21 +231,37 @@ fun GoalTrackerScreen(
             }
         }
     }
+    LaunchedEffect(uiState.createGoalResult) {
+        when (val r = uiState.createGoalResult) {
+            is CreateGoalResult.Success -> {
+                showAddGoal = false
+                viewModel.clearCreateGoalResult()
+            }
+            is CreateGoalResult.Failure -> {
+                snackbarHostState.showSnackbar(r.message, duration = SnackbarDuration.Long)
+                viewModel.clearCreateGoalResult()
+            }
+            null -> { }
+        }
+    }
     if (showAddGoal) {
         AddGoalDialog(
-            onDismiss = { showAddGoal = false },
-            onSubmit = { cat, name, cost, targetDate, savings ->
-                viewModel.createGoal(cat, name, cost, targetDate, savings)
+            onDismiss = {
                 showAddGoal = false
-            }
+                viewModel.clearCreateGoalResult()
+            },
+            onSubmit = { cat, name, cost, targetDate, savings, goalType, importance ->
+                viewModel.createGoal(cat, name, cost, targetDate, savings, goalType, importance)
+            },
+            isLoading = uiState.isLoading
         )
     }
     showEditGoal?.let { goal ->
         EditGoalDialog(
             goal = goal,
             onDismiss = { showEditGoal = null },
-            onSubmit = { cost, targetDate, savings ->
-                viewModel.updateGoal(goal.goal_id, cost, targetDate, savings)
+            onSubmit = { cost, targetDate, savings, goalType, importance ->
+                viewModel.updateGoal(goal.goal_id, cost, targetDate, savings, goalType, importance)
                 showEditGoal = null
                 selectedGoal = null
             }
@@ -314,7 +355,8 @@ private fun TabBar(selectedTab: GtTab, onTabSelected: (GtTab) -> Unit) {
 @Composable
 private fun OverviewTab(
     viewModel: GoalTrackerViewModel,
-    onGoalClick: (GoalResponse, GoalProgressItem?) -> Unit = { _, _ -> }
+    onGoalClick: (GoalResponse, GoalProgressItem?) -> Unit = { _, _ -> },
+    onAddGoal: () -> Unit = { }
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -348,7 +390,7 @@ private fun OverviewTab(
     }
 
     if (uiState.goals.isEmpty()) {
-        NoGoalsEmptyState()
+        NoGoalsEmptyState(onAddGoal = onAddGoal)
         return
     }
 
@@ -415,7 +457,8 @@ private fun OverviewTab(
 @Composable
 private fun GoalsListTab(
     viewModel: GoalTrackerViewModel,
-    onGoalClick: (GoalResponse, GoalProgressItem?) -> Unit = { _, _ -> }
+    onGoalClick: (GoalResponse, GoalProgressItem?) -> Unit = { _, _ -> },
+    onAddGoal: () -> Unit = { }
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val filter = uiState.selectedFilter
@@ -474,6 +517,16 @@ private fun GoalsListTab(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                     )
+                    if (filter != "completed") {
+                        Spacer(Modifier.height(16.dp))
+                        Button(
+                            onClick = onAddGoal,
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                            Text("Set Up Goals")
+                        }
+                    }
                 }
             }
         } else {
@@ -766,7 +819,7 @@ private fun MetricCard(label: String, value: String, color: Color, modifier: Mod
 }
 
 @Composable
-private fun NoGoalsEmptyState() {
+private fun NoGoalsEmptyState(onAddGoal: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -784,7 +837,7 @@ private fun NoGoalsEmptyState() {
         )
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = { /* TODO: Open goals stepper / create flow */ },
+            onClick = onAddGoal,
             colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
         ) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
@@ -817,10 +870,12 @@ private fun EmptyState(title: String, subtitle: String, onRetry: () -> Unit) {
 
 private data class AiInsight(val id: String, val title: String, val message: String, val type: String)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddGoalDialog(
     onDismiss: () -> Unit,
-    onSubmit: (String, String, Double, String?, Double) -> Unit
+    onSubmit: (String, String, Double, String?, Double, String?, Int) -> Unit,
+    isLoading: Boolean = false
 ) {
     val categories = listOf(
         "Emergency" to "Emergency Fund",
@@ -833,11 +888,47 @@ private fun AddGoalDialog(
         "Lifestyle" to "New Smartphone",
         "Custom" to "Custom Goal (Medium)"
     )
+    val goalTypes = listOf("short_term" to "Short", "medium_term" to "Medium", "long_term" to "Long")
+    val priorityLabels = listOf(1 to "Low", 2 to "Med-Low", 3 to "Medium", 4 to "Med-High", 5 to "High")
     var selectedCategoryIndex by remember { mutableStateOf(0) }
     var goalName by remember { mutableStateOf(categories[0].second) }
     var estimatedCost by remember { mutableStateOf("") }
+    var selectedGoalTypeIndex by remember { mutableStateOf(1) }
+    var selectedPriority by remember { mutableStateOf(3) }
     var targetDate by remember { mutableStateOf("") }
     var currentSavings by remember { mutableStateOf("0") }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+    val initialDateMillis = remember {
+        LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = initialDateMillis,
+        yearRange = IntRange(LocalDate.now().year, LocalDate.now().year + 20)
+    )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val instant = Instant.ofEpochMilli(millis)
+                            val localDate = LocalDate.ofInstant(instant, ZoneId.systemDefault())
+                            targetDate = localDate.format(dateFormatter)
+                        }
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("OK", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -849,6 +940,7 @@ private fun AddGoalDialog(
                 Modifier
                     .padding(24.dp)
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     "Add Goal",
@@ -911,12 +1003,71 @@ private fun AddGoalDialog(
                         unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                     )
                 )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Timeline",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    goalTypes.forEachIndexed { idx, (_, label) ->
+                        val selected = selectedGoalTypeIndex == idx
+                        TextButton(
+                            onClick = { selectedGoalTypeIndex = idx },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            ),
+                            modifier = Modifier.background(
+                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent,
+                                RoundedCornerShape(8.dp)
+                            )
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Priority",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    priorityLabels.forEach { (value, label) ->
+                        val selected = selectedPriority == value
+                        TextButton(
+                            onClick = { selectedPriority = value },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            ),
+                            modifier = Modifier.background(
+                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent,
+                                RoundedCornerShape(8.dp)
+                            )
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = targetDate,
-                    onValueChange = { targetDate = it },
-                    label = { Text("Target date (YYYY-MM-DD, optional)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    onValueChange = { },
+                    readOnly = true,
+                    label = { Text("Target date (optional)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showDatePicker = true },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -924,6 +1075,16 @@ private fun AddGoalDialog(
                         unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                     )
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { showDatePicker = true }) {
+                        Text("Pick date", color = MaterialTheme.colorScheme.primary)
+                    }
+                    if (targetDate.isNotBlank()) {
+                        TextButton(onClick = { targetDate = "" }) {
+                            Text("Clear", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = currentSavings,
@@ -945,20 +1106,31 @@ private fun AddGoalDialog(
                     }
                     Button(
                         onClick = {
+                            focusManager.clearFocus()
                             val cost = estimatedCost.toDoubleOrNull() ?: 0.0
                             val savings = currentSavings.toDoubleOrNull() ?: 0.0
                             val (cat, _) = categories[selectedCategoryIndex]
-                            if (goalName.isNotBlank() && cost > 0) {
+                            if (goalName.isNotBlank() && cost > 0 && !isLoading) {
                                 val dateStr = targetDate.takeIf { it.isNotBlank() }
-                                onSubmit(cat, goalName, cost, dateStr, savings)
+                                val goalType = goalTypes[selectedGoalTypeIndex].first
+                                onSubmit(cat, goalName, cost, dateStr, savings, goalType, selectedPriority)
                             }
                         },
+                        enabled = !isLoading,
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
-                        Text("Add")
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.width(20.dp).height(20.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Add")
+                        }
                     }
                 }
             }
@@ -966,15 +1138,60 @@ private fun AddGoalDialog(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditGoalDialog(
     goal: GoalResponse,
     onDismiss: () -> Unit,
-    onSubmit: (Double?, String?, Double?) -> Unit
+    onSubmit: (Double?, String?, Double?, String?, Int?) -> Unit
 ) {
+    val goalTypes = listOf("short_term" to "Short", "medium_term" to "Medium", "long_term" to "Long")
+    val priorityLabels = listOf(1 to "Low", 2 to "Med-Low", 3 to "Medium", 4 to "Med-High", 5 to "High")
     var estimatedCost by remember { mutableStateOf(goal.estimated_cost.toString()) }
     var targetDate by remember { mutableStateOf(goal.target_date ?: "") }
     var currentSavings by remember { mutableStateOf(goal.current_savings.toString()) }
+    var selectedGoalTypeIndex by remember {
+        mutableStateOf(goalTypes.indexOfFirst { it.first == goal.goal_type }.takeIf { it >= 0 } ?: 1)
+    }
+    var selectedPriority by remember { mutableStateOf(goal.importance ?: 3) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+    val initialDateMillis = remember(targetDate) {
+        targetDate.takeIf { it.isNotBlank() }?.let {
+            try {
+                LocalDate.parse(it, dateFormatter).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            } catch (_: Exception) {
+                LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            }
+        } ?: LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = initialDateMillis,
+        yearRange = IntRange(LocalDate.now().year, LocalDate.now().year + 20)
+    )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val instant = Instant.ofEpochMilli(millis)
+                            val localDate = LocalDate.ofInstant(instant, ZoneId.systemDefault())
+                            targetDate = localDate.format(dateFormatter)
+                        }
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("OK", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -986,6 +1203,7 @@ private fun EditGoalDialog(
                 Modifier
                     .padding(24.dp)
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     "Edit Goal",
@@ -1013,12 +1231,71 @@ private fun EditGoalDialog(
                         unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                     )
                 )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Timeline",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    goalTypes.forEachIndexed { idx, (_, label) ->
+                        val selected = selectedGoalTypeIndex == idx
+                        TextButton(
+                            onClick = { selectedGoalTypeIndex = idx },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            ),
+                            modifier = Modifier.background(
+                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent,
+                                RoundedCornerShape(8.dp)
+                            )
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Priority",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    priorityLabels.forEach { (value, label) ->
+                        val selected = selectedPriority == value
+                        TextButton(
+                            onClick = { selectedPriority = value },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            ),
+                            modifier = Modifier.background(
+                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent,
+                                RoundedCornerShape(8.dp)
+                            )
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = targetDate,
-                    onValueChange = { targetDate = it },
-                    label = { Text("Target date (YYYY-MM-DD, optional)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    onValueChange = { },
+                    readOnly = true,
+                    label = { Text("Target date (optional)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showDatePicker = true },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -1026,6 +1303,16 @@ private fun EditGoalDialog(
                         unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                     )
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { showDatePicker = true }) {
+                        Text("Pick date", color = MaterialTheme.colorScheme.primary)
+                    }
+                    if (targetDate.isNotBlank()) {
+                        TextButton(onClick = { targetDate = "" }) {
+                            Text("Clear", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = currentSavings,
@@ -1047,11 +1334,13 @@ private fun EditGoalDialog(
                     }
                     Button(
                         onClick = {
+                            focusManager.clearFocus()
                             val cost = estimatedCost.toDoubleOrNull()
                             val savings = currentSavings.toDoubleOrNull()
                             val dateStr = targetDate.takeIf { it.isNotBlank() }
+                            val goalType = goalTypes[selectedGoalTypeIndex].first
                             if (cost != null && cost > 0) {
-                                onSubmit(cost, dateStr, savings)
+                                onSubmit(cost, dateStr, savings, goalType, selectedPriority)
                             }
                         },
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(

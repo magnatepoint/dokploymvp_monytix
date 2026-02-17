@@ -14,6 +14,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
@@ -214,15 +215,19 @@ object BackendApi {
         goalName: String,
         estimatedCost: Double,
         targetDate: String? = null,
-        currentSavings: Double = 0.0
+        currentSavings: Double = 0.0,
+        goalType: String? = null,
+        importance: Int? = null
     ): Result<CreateGoalResponse> = withContext(Dispatchers.IO) {
         try {
-            val body = buildMap {
+            val body = buildMap<String, Any?> {
                 put("goal_category", goalCategory)
                 put("goal_name", goalName)
                 put("estimated_cost", estimatedCost)
                 put("current_savings", currentSavings)
                 targetDate?.let { put("target_date", it) }
+                goalType?.let { put("goal_type", it) }
+                importance?.let { put("importance", it) }
             }
             val response = client.post("$baseUrl/v1/goals") {
                 header("Authorization", "Bearer $accessToken")
@@ -231,7 +236,28 @@ object BackendApi {
             }.body<CreateGoalResponse>()
             Result.success(response)
         } catch (e: Exception) {
-            Result.failure(e)
+            val msg = extractErrorMessage(e)
+            Log.e("BackendApi", "createGoal failed: $msg", e)
+            Result.failure(Exception(msg))
+        }
+    }
+
+    private suspend fun extractErrorMessage(e: Exception): String {
+        return try {
+            val resp = (e as? io.ktor.client.plugins.ResponseException)?.response ?: return (e.message ?: "Unknown error")
+            val body = resp.bodyAsText()
+            if (body.contains("\"detail\"")) {
+                val elem = kotlinx.serialization.json.Json.parseToJsonElement(body)
+                val json = elem as? kotlinx.serialization.json.JsonObject ?: return body
+                val detail = json["detail"]
+                when (detail) {
+                    is kotlinx.serialization.json.JsonPrimitive -> detail.content
+                    is kotlinx.serialization.json.JsonArray -> (detail.firstOrNull() as? kotlinx.serialization.json.JsonObject)?.get("msg")?.toString()?.trim('"') ?: body
+                    else -> body
+                }.ifBlank { e.message ?: "Request failed" }
+            } else body.ifBlank { e.message ?: "Request failed" }
+        } catch (_: Exception) {
+            e.message ?: "Failed to save goal"
         }
     }
 
@@ -240,13 +266,17 @@ object BackendApi {
         goalId: String,
         estimatedCost: Double? = null,
         targetDate: String? = null,
-        currentSavings: Double? = null
+        currentSavings: Double? = null,
+        goalType: String? = null,
+        importance: Int? = null
     ): Result<GoalResponse> = withContext(Dispatchers.IO) {
         try {
             val body = buildMap<String, Any?> {
                 estimatedCost?.let { put("estimated_cost", it) }
                 targetDate?.let { put("target_date", it) }
                 currentSavings?.let { put("current_savings", it) }
+                goalType?.let { put("goal_type", it) }
+                importance?.let { put("importance", it) }
             }
             val response = client.put("$baseUrl/v1/goals/$goalId") {
                 header("Authorization", "Bearer $accessToken")
