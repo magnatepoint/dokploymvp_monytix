@@ -15,14 +15,21 @@ MONTH_TO_NUM = {
 }
 
 
-def parse_federal_pdf(lines: list[str]) -> pd.DataFrame | None:
-    """Parse Federal Bank PDF statements. Format: Date (DD MMM), Description, Amount Balance."""
+def parse_federal_pdf(lines: list[str], force: bool = False) -> pd.DataFrame | None:
+    """Parse Federal Bank PDF statements. Format: Date (DD MMM), Description, Amount Balance.
+    
+    Args:
+        lines: List of text lines extracted from PDF
+        force: If True, skip bank name check and attempt parsing anyway (useful when bank_code is already known)
+    """
     if not lines:
         return None
 
-    haystack = " ".join(lines[:100]).lower()
-    if "federal" not in haystack and "fdrl" not in haystack:
-        return None
+    # Only check for bank name if not forced (when bank_code is already known, we can skip this check)
+    if not force:
+        haystack = " ".join(lines[:100]).lower()
+        if "federal" not in haystack and "fdrl" not in haystack:
+            return None
 
     # Infer year from statement period (e.g. "1 April 2025 to 31 March 2026")
     start_year = 2025
@@ -51,6 +58,7 @@ def parse_federal_pdf(lines: list[str]) -> pd.DataFrame | None:
 
     parsed_rows: list[dict[str, Any]] = []
     i = 0
+    date_matches_found = 0  # Debug counter
 
     while i < len(lines):
         line = lines[i].strip()
@@ -58,6 +66,8 @@ def parse_federal_pdf(lines: list[str]) -> pd.DataFrame | None:
         if not date_match:
             i += 1
             continue
+        
+        date_matches_found += 1
 
         day_str = date_match.group(1)
         mon = date_match.group(2)
@@ -136,6 +146,12 @@ def parse_federal_pdf(lines: list[str]) -> pd.DataFrame | None:
             })
 
     if not parsed_rows:
+        # Log diagnostic info if we found date matches but no transactions
+        if date_matches_found > 0:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Federal parser: Found %d date matches but 0 transactions. Sample lines: %s", 
+                        date_matches_found, lines[:20] if len(lines) > 20 else lines)
         return None
 
     return pd.DataFrame(parsed_rows)

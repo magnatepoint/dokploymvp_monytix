@@ -116,6 +116,7 @@ import com.example.monytix.ui.theme.SurfaceElevated
 import com.example.monytix.ui.theme.Info
 import com.example.monytix.ui.theme.Success
 import com.example.monytix.ui.theme.TextSecondary
+import com.example.monytix.spendsense.components.InteractivePieChart
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -2125,23 +2126,16 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
                 }
             }
         }
-        if (breakdown.isEmpty()) {
-            item {
-                Text("No category data", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-            }
-        } else {
-            itemsIndexed(breakdown) { index, item ->
-                InsightCategoryRow(
-                    categoryName = item.category_name,
-                    amount = item.amount,
-                    percentage = item.percentage,
-                    transactionCount = item.transaction_count,
-                    maxAmount = breakdown.maxOfOrNull { it.amount } ?: 1.0,
-                    staggerDelayMillis = 50 * index,
-                    deltaPct = deltaByCategory[item.category_code],
-                    trendLabel = viewModel.categoryTrendLabel(item)
-                )
-            }
+        item {
+            InteractivePieChart(
+                data = breakdown,
+                totalAmount = total,
+                deltaByCategory = deltaByCategory,
+                onCategorySelected = { category ->
+                    // Optional: Could navigate to category details
+                },
+                getTrendLabel = { item -> viewModel.categoryTrendLabel(item) }
+            )
         }
     }
 }

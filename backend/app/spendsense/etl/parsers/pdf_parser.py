@@ -235,12 +235,19 @@ def parse_pdf_file(data: bytes, filename: str, password: str | None = None) -> l
                 for bank_name, parser in BANK_PARSERS:
                     if bank_name == target:
                         try:
-                            df = parser(lines)
+                            # Pass force=True when bank_code is already known, so parser skips bank name check
+                            if bank_code == "federal_bank":
+                                df = parser(lines, force=True)
+                            else:
+                                df = parser(lines)
                             if df is not None and not df.empty:
                                 logger.info("Parsed %s using %s line-based parser (%d transactions)", filename, target, len(df))
                                 return dataframe_to_records(df, bank_code=bank_code)
                             if df is not None and df.empty:
                                 logger.warning("%s parser returned empty for %s, falling back to table extraction", target, filename)
+                            else:
+                                # df is None - parser didn't recognize the format
+                                logger.debug("%s parser returned None for %s (format not recognized or no transactions found)", target, filename)
                         except Exception as e:
                             logger.warning("%s parser failed for %s: %s", target, filename, e)
                         break
