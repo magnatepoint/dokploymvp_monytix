@@ -119,3 +119,56 @@ nixpacks build . -o backend.tar
 - Wait 1–2 minutes after deploy for Traefik to pick up the route
 - Confirm DNS A record points to the Dokploy server
 - Use **Preview Compose** in Dokploy to see the generated Traefik labels
+
+### Git clone fails: "Could not resolve host: github.com"
+
+This is a DNS resolution issue on the Dokploy server itself (not inside containers). Fix it on the host:
+
+**Option 1: Fix DNS on Dokploy server (Recommended)**
+
+SSH into your Dokploy server and check/fix DNS:
+
+```bash
+# Check current DNS settings
+cat /etc/resolv.conf
+
+# Test DNS resolution
+nslookup github.com
+ping -c 2 github.com
+
+# If DNS is broken, fix it:
+# Edit /etc/resolv.conf (or use systemd-resolved/NetworkManager)
+sudo nano /etc/resolv.conf
+
+# Add Google DNS servers:
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+
+# Or use Cloudflare DNS:
+nameserver 1.1.1.1
+nameserver 1.0.0.1
+
+# Restart network/Dokploy if needed
+sudo systemctl restart dokploy
+```
+
+**Option 2: Configure Dokploy to use custom DNS**
+
+Some Dokploy versions allow configuring DNS in the Dokploy settings. Check:
+- Dokploy Settings → Network → DNS Configuration
+- Or set environment variable: `DOKPLOY_DNS_SERVERS=8.8.8.8,8.8.4.4`
+
+**Option 3: Use SSH instead of HTTPS for Git**
+
+If DNS issues persist, configure Dokploy to use SSH for Git:
+1. Add SSH key to Dokploy
+2. Use SSH URL: `git@github.com:magnatepoint/dokploymvp_monytix.git`
+3. Update repository URL in Dokploy project settings
+
+**Option 4: Use a different Git provider**
+
+If GitHub is blocked/unreachable, mirror the repo to:
+- GitLab
+- Bitbucket
+- Self-hosted Git server
+- Or use Dokploy's manual upload feature (if available)
