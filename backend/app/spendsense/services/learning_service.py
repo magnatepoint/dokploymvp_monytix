@@ -80,8 +80,7 @@ async def learn_from_edit(
                     UPDATE spendsense.merchant_rules
                     SET category_code = $1,
                         subcategory_code = $2,
-                        priority = 120,  -- Higher priority for user-learned rules
-                        updated_at = NOW()
+                        priority = 120
                     WHERE rule_id = $3
                     """,
                     category_code,

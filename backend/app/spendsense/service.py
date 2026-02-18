@@ -1058,6 +1058,44 @@ class SpendSenseService:
             finally:
                 await self._pool.release(conn)
 
+        # Resolve category/subcategory: API may receive display names (e.g. "Bank Interest & Fees")
+        # but txn_override stores codes (e.g. "banks"). Look up by code first, then by name.
+        resolved_category = category_code
+        resolved_subcategory = subcategory_code
+        if category_code is not None or subcategory_code is not None:
+            conn = await self._pool.acquire()
+            try:
+                if category_code:
+                    row = await conn.fetchrow(
+                        "SELECT category_code FROM spendsense.dim_category WHERE category_code = $1 AND active = TRUE",
+                        category_code.strip(),
+                    )
+                    if not row:
+                        row = await conn.fetchrow(
+                            "SELECT category_code FROM spendsense.dim_category WHERE category_name = $1 AND active = TRUE",
+                            category_code.strip(),
+                        )
+                    if row:
+                        resolved_category = row["category_code"]
+                    else:
+                        raise ValueError(f"Category not found: {category_code!r}. Use category code (e.g. banks) or exact display name.")
+                if subcategory_code:
+                    row = await conn.fetchrow(
+                        "SELECT subcategory_code FROM spendsense.dim_subcategory WHERE subcategory_code = $1 AND active = TRUE",
+                        subcategory_code.strip(),
+                    )
+                    if not row:
+                        row = await conn.fetchrow(
+                            "SELECT subcategory_code FROM spendsense.dim_subcategory WHERE subcategory_name = $1 AND active = TRUE",
+                            subcategory_code.strip(),
+                        )
+                    if row:
+                        resolved_subcategory = row["subcategory_code"]
+                    else:
+                        raise ValueError(f"Subcategory not found: {subcategory_code!r}. Use subcategory code or exact display name.")
+            finally:
+                await self._pool.release(conn)
+
         # Delete existing override if any, then insert new one
         # (Since there's no unique constraint, we delete first to avoid duplicates)
         delete_query = """
@@ -1068,7 +1106,7 @@ class SpendSenseService:
         
         # Only insert override if at least one of category_code, subcategory_code, or txn_type is provided
         # If all are None, there's nothing to override
-        if category_code is not None or subcategory_code is not None or txn_type is not None:
+        if resolved_category is not None or resolved_subcategory is not None or txn_type is not None:
             override_query = """
             INSERT INTO spendsense.txn_override (
                 txn_id, user_id, category_code, subcategory_code, txn_type
@@ -1079,13 +1117,13 @@ class SpendSenseService:
                 override_query,
                 txn_id,
                 user_id,
-                category_code,
-                subcategory_code,
+                resolved_category,
+                resolved_subcategory,
                 txn_type,
             )
             logger.info(
                 f"Created transaction override: txn_id={txn_id}, user_id={user_id}, "
-                f"category={category_code}, subcategory={subcategory_code}, txn_type={txn_type}"
+                f"category={resolved_category}, subcategory={resolved_subcategory}, txn_type={txn_type}"
             )
         else:
             logger.debug(
