@@ -1,0 +1,32 @@
+Metadata-Version: 2.4
+Name: mvp-backend
+Version: 0.1.0
+Summary: FastAPI backend service for the MVP project.
+Author: Santosh
+Requires-Python: >=3.10
+Requires-Dist: fastapi<0.116.0,>=0.115.0
+Requires-Dist: uvicorn[standard]<0.33.0,>=0.32.0
+Requires-Dist: python-dotenv<2.0.0,>=1.0.1
+Requires-Dist: pydantic-settings<3.0.0,>=2.6.0
+Requires-Dist: pyjwt[crypto]<3.0.0,>=2.9.0
+Requires-Dist: httpx<0.28.0,>=0.27.2
+Requires-Dist: email-validator<3.0.0,>=2.2.0
+Requires-Dist: asyncpg<0.31.0,>=0.30.0
+Requires-Dist: pandas<3.0.0,>=2.2.0
+Requires-Dist: openpyxl<4.0.0,>=3.1.0
+Requires-Dist: xlrd<3.0.0,>=2.0.1
+Requires-Dist: celery[redis]<6.0.0,>=5.4.0
+Requires-Dist: redis<6.0.0,>=5.0.0
+Requires-Dist: python-multipart<1.0.0,>=0.0.9
+Requires-Dist: pdfplumber<1.0.0,>=0.11.0
+Requires-Dist: PyMuPDF<1.25.0,>=1.24.7
+Requires-Dist: google-api-python-client<3.0.0,>=2.146.0
+Requires-Dist: google-auth<3.0.0,>=2.35.0
+Requires-Dist: google-auth-httplib2<1.0.0,>=0.2.0
+Requires-Dist: google-cloud-pubsub<3.0.0,>=2.24.0
+Requires-Dist: scikit-learn<2.0.0,>=1.5.0
+Requires-Dist: numpy<2.0.0,>=1.26.0
+Requires-Dist: python-dateutil<3.0.0,>=2.9.0
+Provides-Extra: dev
+Requires-Dist: pytest<9.0.0,>=8.3.2; extra == "dev"
+Requires-Dist: ruff<0.7.0,>=0.6.9; extra == "dev"

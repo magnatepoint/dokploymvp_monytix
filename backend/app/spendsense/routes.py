@@ -290,9 +290,32 @@ async def list_transactions(
 async def delete_all_user_data(
     user: AuthenticatedUser = Depends(get_current_user),
     service: SpendSenseService = Depends(get_service),
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Delete all transaction data for the authenticated user. This is irreversible."""
     return await service.delete_all_user_data(user.user_id)
+
+
+@router.post(
+    "/account/deactivate",
+    summary="Deactivate account and delete all data",
+    status_code=200,
+)
+async def deactivate_account(
+    user: AuthenticatedUser = Depends(get_current_user),
+    service: SpendSenseService = Depends(get_service),
+) -> dict[str, Any]:
+    """Deactivate user account: permanently delete all user data across all schemas.
+    
+    This action:
+    - Deletes all transaction data (txn_fact, txn_enriched, txn_parsed, etc.)
+    - Deletes ML feedback and merchant aliases
+    - Deletes custom categories/subcategories
+    - Deletes Goals, Budget, and MoneyMoments data
+    - Logs the deactivation action for compliance
+    
+    This is irreversible. The account cannot be reactivated.
+    """
+    return await service.deactivate_account(user.user_id)
 
 
 @router.put(

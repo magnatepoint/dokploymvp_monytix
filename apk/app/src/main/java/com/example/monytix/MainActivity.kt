@@ -25,6 +25,10 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
@@ -32,6 +36,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
@@ -155,6 +161,8 @@ internal fun MainContent() {
     var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
     val pendingUpload by PendingUploadHolder.state
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(pendingUpload) {
         if (pendingUpload != null) {
             Log.d("MonytixUpload", "Pending upload set, switching to DATA tab")
@@ -179,7 +187,10 @@ internal fun MainContent() {
             }
         }
     ) {
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(it) } }
+        ) { innerPadding ->
             AnimatedContent(
                 targetState = currentDestination,
                 transitionSpec = {
@@ -190,6 +201,9 @@ internal fun MainContent() {
                 when (destination) {
                     AppDestinations.HOME -> HomeScreen(
                         modifier = Modifier.padding(innerPadding),
+                        isSelected = currentDestination == AppDestinations.HOME,
+                        onNavigateTo = { currentDestination = it },
+                        onShowSnackbar = { scope.launch { snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Short) } },
                         onLaunchFilePicker = { (context as? MainActivity)?.launchFilePicker() },
                         onAddTransaction = {
                             currentDestination = AppDestinations.DATA

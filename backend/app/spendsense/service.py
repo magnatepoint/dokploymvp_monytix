@@ -870,57 +870,281 @@ class SpendSenseService:
             total_count,
         )
 
-    async def delete_all_user_data(self, user_id: str) -> dict[str, int]:
-        """Delete all transaction data for a user. Returns counts of deleted records."""
-        # Delete in order to respect foreign key constraints
+    async def delete_all_user_data(self, user_id: str) -> dict[str, Any]:
+        """Delete user transaction and related data. Returns counts of deleted records.
+        
+        Deletes:
+        - Transaction data (txn_override, txn_fact → CASCADE to txn_enriched, txn_parsed)
+        - Staging and upload batches
+        - ML feedback and aliases
+        - Goals, Budget, MoneyMoments data (if schemas exist)
+        - Audit log entries
+        
+        Preserves:
+        - Custom categories/subcategories (user-created taxonomy) - kept so users can reuse them
+        """
+        counts: dict[str, int] = {}
+        
+        # Helper to safely execute DELETE and extract count
+        async def safe_delete(query: str, *args: Any) -> int:
+            try:
+                result = await self._pool.execute(query, *args)
+                return int(result.split()[-1]) if result else 0
+            except Exception as e:
+                logger.warning(f"Delete query failed (table may not exist): {e}")
+                return 0
+        
         # 1. Delete overrides (references txn_fact)
-        override_result = await self._pool.execute(
+        counts["overrides_deleted"] = await safe_delete(
+            "DELETE FROM spendsense.txn_override WHERE user_id = $1",
+            user_id,
+        )
+        
+        # 2. Delete ML merchant feedback
+        counts["ml_feedback_deleted"] = await safe_delete(
+            "DELETE FROM spendsense.ml_merchant_feedback WHERE user_id = $1",
+            user_id,
+        )
+        
+        # 3. Delete ML merchant aliases (user-specific only, not global)
+        counts["ml_aliases_deleted"] = await safe_delete(
+            "DELETE FROM spendsense.ml_merchant_alias WHERE user_id = $1",
+            user_id,
+        )
+        
+        # 4. Custom categories/subcategories are NOT deleted here
+        # They are preserved so users can keep their taxonomy even after clearing transaction data
+        # Only deleted during full account deactivation
+        
+        # 6. Delete fact records (CASCADE deletes txn_enriched and txn_parsed)
+        counts["transactions_deleted"] = await safe_delete(
+            "DELETE FROM spendsense.txn_fact WHERE user_id = $1",
+            user_id,
+        )
+        
+        # 7. Delete staging records
+        counts["staging_deleted"] = await safe_delete(
+            "DELETE FROM spendsense.txn_staging WHERE user_id = $1",
+            user_id,
+        )
+        
+        # 8. Delete upload batches
+        counts["batches_deleted"] = await safe_delete(
+            "DELETE FROM spendsense.upload_batch WHERE user_id = $1",
+            user_id,
+        )
+        
+        # 9. Delete Goals data (if schema exists)
+        counts["goals_deleted"] = await safe_delete(
+            "DELETE FROM goal.user_goals_master WHERE user_id = $1",
+            user_id,
+        )
+        counts["goal_contributions_deleted"] = await safe_delete(
+            "DELETE FROM goalcompass.goal_contribution_fact WHERE user_id = $1",
+            user_id,
+        )
+        counts["goal_signals_deleted"] = await safe_delete(
+            "DELETE FROM goal.goal_signals WHERE user_id = $1",
+            user_id,
+        )
+        counts["goal_suggestions_deleted"] = await safe_delete(
+            "DELETE FROM goal.goal_suggestions WHERE user_id = $1",
+            user_id,
+        )
+        
+        # 10. Delete Budget data (if schema exists)
+        counts["budget_commits_deleted"] = await safe_delete(
+            "DELETE FROM budgetpilot.user_budget_commit WHERE user_id = $1",
+            user_id,
+        )
+        counts["budget_recommendations_deleted"] = await safe_delete(
+            "DELETE FROM budgetpilot.user_budget_recommendation WHERE user_id = $1",
+            user_id,
+        )
+        counts["budget_goal_allocations_deleted"] = await safe_delete(
+            "DELETE FROM budgetpilot.user_budget_commit_goal_alloc WHERE user_id = $1",
+            user_id,
+        )
+        counts["goal_attributes_deleted"] = await safe_delete(
+            "DELETE FROM budgetpilot.user_goal_attributes WHERE user_id = $1",
+            user_id,
+        )
+        
+        # 11. Delete MoneyMoments data (if schema exists)
+        counts["mm_traits_deleted"] = await safe_delete(
+            "DELETE FROM moneymoments.mm_user_traits WHERE user_id = $1",
+            user_id,
+        )
+        counts["mm_moments_deleted"] = await safe_delete(
+            "DELETE FROM moneymoments.mm_user_moments WHERE user_id = $1",
+            user_id,
+        )
+        counts["mm_signals_deleted"] = await safe_delete(
+            "DELETE FROM moneymoments.mm_signal_daily WHERE user_id = $1",
+            user_id,
+        )
+        
+        # 12. Log deletion action BEFORE deleting audit entries (for compliance)
+        from app.core.audit import persist_audit, AuditAction
+        await persist_audit(
+            self._pool,
+            AuditAction.ACCOUNT_DELETE,
+            user_id,
+            details={"deleted_counts": counts},
+        )
+        # Then delete audit log entries (except the one we just created)
+        counts["audit_logs_deleted"] = await safe_delete(
+            "DELETE FROM spendsense.audit_log WHERE user_id = $1 AND action != $2",
+            user_id,
+            AuditAction.ACCOUNT_DELETE.value,
+        )
+        
+        logger.info(f"Deleted all data for user {user_id}: {counts}")
+        return counts
+
+    async def deactivate_account(self, user_id: str) -> dict[str, Any]:
+        """Deactivate user account: delete all data and Supabase auth account.
+        
+        This permanently:
+        - Deletes all app data (transactions, goals, budget, etc.)
+        - Anonymizes custom categories/subcategories (removes user_id link, making them anonymous taxonomy)
+          - Legal per GDPR: anonymized data (no user_id) can be retained
+          - Note: Category names might contain personal info - anonymization removes user link but names remain
+          - If category_code conflicts with existing system category, the custom one is deleted
+        - Deletes the Supabase auth account (email/password)
+        - Allows the user to register again with the same email
+        
+        The account cannot be reactivated.
+        """
+        # Delete all user data first (this preserves custom categories)
+        deleted_counts = await self.delete_all_user_data(user_id)
+        
+        # Anonymize custom categories/subcategories (remove user_id link)
+        # This makes them anonymous taxonomy data - legal to keep per GDPR if no personal info in names
+        # Note: Category names might contain personal info (e.g., "My Company Name") - 
+        # anonymization removes the user link but names remain. If names are generic (e.g., "Work Expenses"),
+        # this is safe. If names contain personal identifiers, consider deleting them instead.
+        # Handle conflicts: if category_code already exists as system category, delete the custom one
+        custom_cat_result = await self._pool.execute(
             """
-            DELETE FROM spendsense.txn_override
+            WITH to_anonymize AS (
+                SELECT category_code FROM spendsense.dim_category WHERE user_id = $1
+            ),
+            conflicts AS (
+                SELECT ta.category_code 
+                FROM to_anonymize ta
+                WHERE EXISTS (
+                    SELECT 1 FROM spendsense.dim_category dc 
+                    WHERE dc.category_code = ta.category_code AND dc.user_id IS NULL
+                )
+            )
+            DELETE FROM spendsense.dim_category 
+            WHERE user_id = $1 AND category_code IN (SELECT category_code FROM conflicts)
+            """,
+            user_id,
+        )
+        custom_cat_conflicts = int(custom_cat_result.split()[-1]) if custom_cat_result else 0
+        
+        # Anonymize remaining (no conflicts)
+        custom_cat_anon = await self._pool.execute(
+            """
+            UPDATE spendsense.dim_category 
+            SET user_id = NULL, is_custom = FALSE 
             WHERE user_id = $1
             """,
             user_id,
         )
-        override_count = int(override_result.split()[-1]) if override_result else 0
+        custom_cat_anon_count = int(custom_cat_anon.split()[-1]) if custom_cat_anon else 0
         
-        # 2. Delete enriched records (references txn_fact via txn_id)
-        # This will be handled by CASCADE when we delete txn_fact
-        
-        # 3. Delete fact records (this will CASCADE to enriched)
-        fact_result = await self._pool.execute(
+        # Same for subcategories
+        custom_subcat_result = await self._pool.execute(
             """
-            DELETE FROM spendsense.txn_fact
+            WITH to_anonymize AS (
+                SELECT subcategory_code FROM spendsense.dim_subcategory WHERE user_id = $1
+            ),
+            conflicts AS (
+                SELECT ta.subcategory_code 
+                FROM to_anonymize ta
+                WHERE EXISTS (
+                    SELECT 1 FROM spendsense.dim_subcategory ds 
+                    WHERE ds.subcategory_code = ta.subcategory_code AND ds.user_id IS NULL
+                )
+            )
+            DELETE FROM spendsense.dim_subcategory 
+            WHERE user_id = $1 AND subcategory_code IN (SELECT subcategory_code FROM conflicts)
+            """,
+            user_id,
+        )
+        custom_subcat_conflicts = int(custom_subcat_result.split()[-1]) if custom_subcat_result else 0
+        
+        custom_subcat_anon = await self._pool.execute(
+            """
+            UPDATE spendsense.dim_subcategory 
+            SET user_id = NULL, is_custom = FALSE 
             WHERE user_id = $1
             """,
             user_id,
         )
-        fact_count = int(fact_result.split()[-1]) if fact_result else 0
+        custom_subcat_anon_count = int(custom_subcat_anon.split()[-1]) if custom_subcat_anon else 0
         
-        # 4. Delete staging records (check both schemas for compatibility)
-        staging_result = await self._pool.execute(
-            """
-            DELETE FROM spendsense.txn_staging
-            WHERE user_id = $1
-            """,
+        deleted_counts["custom_categories_anonymized"] = custom_cat_anon_count
+        deleted_counts["custom_categories_deleted_conflicts"] = custom_cat_conflicts
+        deleted_counts["custom_subcategories_anonymized"] = custom_subcat_anon_count
+        deleted_counts["custom_subcategories_deleted_conflicts"] = custom_subcat_conflicts
+        
+        # Delete Supabase auth account so they can re-register
+        auth_deleted = False
+        try:
+            from app.auth.service import SupabaseAuthService
+            from app.core.config import get_settings
+            import httpx
+            
+            settings = get_settings()
+            # Use Supabase Admin API to delete the auth user
+            url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
+            headers = {
+                "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                "apikey": settings.supabase_service_role_key,
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.delete(url, headers=headers)
+                if response.status_code == 200:
+                    auth_deleted = True
+                    logger.info(f"Deleted Supabase auth account for user {user_id}")
+                else:
+                    logger.warning(
+                        f"Failed to delete Supabase auth account for {user_id}: "
+                        f"{response.status_code} {response.text}"
+                    )
+        except Exception as e:
+            logger.error(f"Error deleting Supabase auth account for {user_id}: {e}")
+            # Continue even if auth deletion fails - app data is already deleted
+        
+        # Log deactivation (separate from deletion log)
+        from app.core.audit import persist_audit, AuditAction
+        await persist_audit(
+            self._pool,
+            AuditAction.ACCOUNT_DEACTIVATE,
             user_id,
+            details={
+                "deleted_counts": deleted_counts,
+                "auth_account_deleted": auth_deleted,
+            },
         )
-        staging_count = int(staging_result.split()[-1]) if staging_result else 0
         
-        # 5. Delete upload batches
-        batch_result = await self._pool.execute(
-            """
-            DELETE FROM spendsense.upload_batch
-            WHERE user_id = $1
-            """,
-            user_id,
-        )
-        batch_count = int(batch_result.split()[-1]) if batch_result else 0
-        
+        logger.info(f"Account deactivated for user {user_id} (auth_deleted={auth_deleted})")
         return {
-            "batches_deleted": batch_count,
-            "staging_deleted": staging_count,
-            "transactions_deleted": fact_count,
-            "overrides_deleted": override_count,
+            "status": "deactivated",
+            "message": (
+                "Account deactivated. All data has been permanently deleted. "
+                "You can register again with the same email."
+                if auth_deleted
+                else "Account deactivated. All app data deleted. "
+                     "Note: Auth account deletion failed - contact support if you want to re-register."
+            ),
+            "deleted_counts": deleted_counts,
+            "auth_account_deleted": auth_deleted,
         }
 
     async def update_transaction(

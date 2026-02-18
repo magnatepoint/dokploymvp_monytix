@@ -39,9 +39,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -52,10 +56,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +84,7 @@ import com.example.monytix.data.TransactionRecordResponse
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import com.example.monytix.AppDestinations
 import com.example.monytix.ui.theme.AccentPrimary
 import com.example.monytix.ui.theme.HeroCardGlow
 import com.example.monytix.ui.theme.AccentSecondary
@@ -90,11 +98,18 @@ import com.example.monytix.ui.theme.SurfaceElevated
 fun HomeScreen(
     viewModel: HomeViewModel = viewModel(),
     modifier: Modifier = Modifier,
+    isSelected: Boolean = true,
+    onNavigateTo: (AppDestinations) -> Unit = {},
+    onShowSnackbar: (String) -> Unit = {},
     onLaunchFilePicker: () -> Unit = {},
     onAddTransaction: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(ConsoleTab.OVERVIEW) }
+
+    LaunchedEffect(isSelected) {
+        if (isSelected) viewModel.refresh()
+    }
 
     val colorScheme = MaterialTheme.colorScheme
     Scaffold(
@@ -157,25 +172,35 @@ fun HomeScreen(
             ) {
             WelcomeBanner(username = uiState.userEmail ?: "User")
             TabBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
-            if (uiState.isLoading && uiState.kpis == null) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = colorScheme.primary)
-                }
-            } else {
-                AnimatedContent(
-                    targetState = selectedTab,
-                    transitionSpec = { fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(200)) },
-                    label = "tab_content"
-                ) { tab ->
-                    when (tab) {
-                        ConsoleTab.OVERVIEW -> OverviewTab(viewModel = viewModel, onTabSelected = { selectedTab = it })
-                        ConsoleTab.ACCOUNTS -> AccountsTab(accounts = uiState.accounts, onRetry = { viewModel.refresh() })
-                        ConsoleTab.SPENDING -> SpendingTab(viewModel = viewModel)
-                        ConsoleTab.GOALS -> GoalsTab(viewModel = viewModel)
-                        ConsoleTab.AI_INSIGHT -> AIInsightTab(viewModel = viewModel)
+            PullToRefreshBox(
+                isRefreshing = uiState.isLoading,
+                onRefresh = { viewModel.refresh() }
+            ) {
+                if (uiState.isLoading && uiState.kpis == null) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = colorScheme.primary)
+                    }
+                } else {
+                    AnimatedContent(
+                        targetState = selectedTab,
+                        transitionSpec = { fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(200)) },
+                        label = "tab_content"
+                    ) { tab ->
+                        when (tab) {
+                            ConsoleTab.OVERVIEW -> OverviewTab(
+                                viewModel = viewModel,
+                                onTabSelected = { selectedTab = it },
+                                onNavigateTo = onNavigateTo,
+                                onShowSnackbar = onShowSnackbar
+                            )
+                            ConsoleTab.ACCOUNTS -> AccountsTab(accounts = uiState.accounts, onRetry = { viewModel.refresh() })
+                            ConsoleTab.SPENDING -> SpendingTab(viewModel = viewModel)
+                            ConsoleTab.GOALS -> GoalsTab(viewModel = viewModel)
+                            ConsoleTab.AI_INSIGHT -> AIInsightTab(viewModel = viewModel)
+                        }
                     }
                 }
             }
@@ -279,8 +304,15 @@ private fun TabBar(selectedTab: ConsoleTab, onTabSelected: (ConsoleTab) -> Unit)
 }
 
 @Composable
-private fun OverviewTab(viewModel: HomeViewModel, onTabSelected: (ConsoleTab) -> Unit = {}) {
+private fun OverviewTab(
+    viewModel: HomeViewModel,
+    onTabSelected: (ConsoleTab) -> Unit = {},
+    onNavigateTo: (AppDestinations) -> Unit = {},
+    onShowSnackbar: (String) -> Unit = {}
+) {
     val uiState by viewModel.uiState.collectAsState()
+    var showNetWorthDialog by remember { mutableStateOf(false) }
+    
     if (viewModel.hasNoTransactionData()) {
         EmptyState(
             title = "No overview data available",
@@ -299,6 +331,16 @@ private fun OverviewTab(viewModel: HomeViewModel, onTabSelected: (ConsoleTab) ->
         ((income - expenses) / income * 100)
     } else 0.0
 
+    if (showNetWorthDialog) {
+        NetWorthExplanationDialog(
+            onDismiss = { showNetWorthDialog = false },
+            onViewAccounts = {
+                showNetWorthDialog = false
+                onNavigateTo(AppDestinations.DATA)
+            }
+        )
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -314,7 +356,11 @@ private fun OverviewTab(viewModel: HomeViewModel, onTabSelected: (ConsoleTab) ->
                     trendPct = viewModel.netWorthTrendPct(),
                     sparklineData = viewModel.sparklineData(),
                     totalBalance = totalBalance,
-                    onClick = { }
+                    onInfoClick = { showNetWorthDialog = true },
+                    onClick = {
+                        onNavigateTo(AppDestinations.DATA)
+                        onShowSnackbar("Net worth = assets minus liabilities. View in SpendSense.")
+                    }
                 )
             }
         }
@@ -325,7 +371,23 @@ private fun OverviewTab(viewModel: HomeViewModel, onTabSelected: (ConsoleTab) ->
                     visible = true,
                     enter = fadeIn(animationSpec = tween(400, delayMillis = 100))
                 ) {
-                    TodaysIntelligenceCard(items = todayItems)
+                    TodaysIntelligenceCard(
+                        items = todayItems,
+                        onClick = {
+                            val hasRisk = todayItems.any { it.type == "risk" }
+                            val hasSpike = todayItems.any { it.type == "spike" }
+                            if (hasRisk) {
+                                onNavigateTo(AppDestinations.GOALS)
+                                onShowSnackbar("View details in GoalTracker.")
+                            } else if (hasSpike) {
+                                onNavigateTo(AppDestinations.DATA)
+                                onShowSnackbar("View spending in SpendSense.")
+                            } else {
+                                onNavigateTo(AppDestinations.DATA)
+                                onShowSnackbar("View details in SpendSense.")
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -337,15 +399,33 @@ private fun OverviewTab(viewModel: HomeViewModel, onTabSelected: (ConsoleTab) ->
             ) {
                 DynamicChip(
                     label = if (viewModel.isCashFlowPositive()) "Cash Flow Positive" else "Cash Flow Negative",
-                    isPositive = viewModel.isCashFlowPositive()
+                    isPositive = viewModel.isCashFlowPositive(),
+                    onClick = {
+                        onNavigateTo(AppDestinations.DATA)
+                        onShowSnackbar("Cash flow = income minus expenses. View in SpendSense.")
+                    }
                 )
                 val atRisk = viewModel.goalsAtRiskCount()
                 if (atRisk > 0) {
-                    DynamicChip(label = "$atRisk Goals At Risk", isPositive = false)
+                    DynamicChip(
+                        label = "$atRisk Goals At Risk",
+                        isPositive = false,
+                        onClick = {
+                            onNavigateTo(AppDestinations.GOALS)
+                            onShowSnackbar("$atRisk goals need attention. View in GoalTracker.")
+                        }
+                    )
                 }
                 val spikes = viewModel.spendingSpikeCount()
                 if (spikes > 0) {
-                    DynamicChip(label = "$spikes Spending Spike${if (spikes > 1) "s" else ""}", isPositive = false)
+                    DynamicChip(
+                        label = "$spikes Spending Spike${if (spikes > 1) "s" else ""}",
+                        isPositive = false,
+                        onClick = {
+                            onNavigateTo(AppDestinations.DATA)
+                            onShowSnackbar("Unusual spending detected. View in SpendSense.")
+                        }
+                    )
                 }
             }
         }
@@ -356,19 +436,28 @@ private fun OverviewTab(viewModel: HomeViewModel, onTabSelected: (ConsoleTab) ->
                     title = "$monthName Spending",
                     value = formatCurrency(thisMonthSpending),
                     color = com.example.monytix.ui.theme.ChartRed,
-                    onClick = { onTabSelected(ConsoleTab.SPENDING) }
+                    onClick = {
+                        onNavigateTo(AppDestinations.DATA)
+                        onShowSnackbar("Monthly spending by category. View in SpendSense.")
+                    }
                 )
                 SavingsRateRingCard(
                     modifier = Modifier.weight(1f),
                     savingsRate = savingsRate,
-                    onClick = { onTabSelected(ConsoleTab.AI_INSIGHT) }
+                    onClick = {
+                        onNavigateTo(AppDestinations.FAVORITES)
+                        onShowSnackbar("Savings rate = (income - expenses) / income. View AI insights.")
+                    }
                 )
                 SummaryCard(
                     modifier = Modifier.weight(1f),
                     title = "Active Goals",
                     value = goals.size.toString(),
                     color = MaterialTheme.colorScheme.primary,
-                    onClick = { onTabSelected(ConsoleTab.GOALS) }
+                    onClick = {
+                        onNavigateTo(AppDestinations.GOALS)
+                        onShowSnackbar("Track progress and adjust goals in GoalTracker.")
+                    }
                 )
             }
         }
@@ -378,7 +467,13 @@ private fun OverviewTab(viewModel: HomeViewModel, onTabSelected: (ConsoleTab) ->
                 Text("Recent Transactions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
             }
             items(recentTxns.take(5)) { txn ->
-                RecentTransactionRow(transaction = txn)
+                RecentTransactionRow(
+                    transaction = txn,
+                    onClick = {
+                        onNavigateTo(AppDestinations.DATA)
+                        onShowSnackbar("View all transactions in SpendSense.")
+                    }
+                )
             }
         }
         val categories = viewModel.transformCategorySpending()
@@ -388,7 +483,12 @@ private fun OverviewTab(viewModel: HomeViewModel, onTabSelected: (ConsoleTab) ->
             }
             item {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onNavigateTo(AppDestinations.DATA)
+                            onShowSnackbar("Spending by category. View details in SpendSense.")
+                        },
                     colors = CardDefaults.cardColors(containerColor = GlassCard),
                     shape = RoundedCornerShape(16.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -413,10 +513,13 @@ private fun OverviewTab(viewModel: HomeViewModel, onTabSelected: (ConsoleTab) ->
 }
 
 @Composable
-private fun TodaysIntelligenceCard(items: List<HomeViewModel.TodayIntelligenceItem>) {
+private fun TodaysIntelligenceCard(
+    items: List<HomeViewModel.TodayIntelligenceItem>,
+    onClick: () -> Unit = {}
+) {
     val colorScheme = MaterialTheme.colorScheme
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = GlassCard),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -453,13 +556,18 @@ private fun TodaysIntelligenceCard(items: List<HomeViewModel.TodayIntelligenceIt
 }
 
 @Composable
-private fun DynamicChip(label: String, isPositive: Boolean) {
+private fun DynamicChip(
+    label: String,
+    isPositive: Boolean,
+    onClick: () -> Unit = {}
+) {
     val color = if (isPositive) com.example.monytix.ui.theme.Success else com.example.monytix.ui.theme.ChartRed
     Text(
         label,
         style = MaterialTheme.typography.labelSmall,
         color = color,
         modifier = Modifier
+            .clickable(onClick = onClick)
             .background(color.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
             .padding(horizontal = 10.dp, vertical = 6.dp)
     )
@@ -537,6 +645,7 @@ private fun HeroBalanceCard(
     trendPct: Double,
     sparklineData: List<Float>,
     totalBalance: Double = 0.0,
+    onInfoClick: () -> Unit = {},
     onClick: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -584,11 +693,27 @@ private fun HeroBalanceCard(
                 .padding(20.dp)
         ) {
             Column {
-                Text(
-                    "Net Worth",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colorScheme.onSurfaceVariant
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        "Net Worth",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                    IconButton(
+                        onClick = onInfoClick,
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "How net worth is calculated",
+                            modifier = Modifier.size(14.dp),
+                            tint = colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 Row(
                     Modifier.fillMaxWidth(),
@@ -791,11 +916,14 @@ private fun MiniSparkline(data: List<Float>) {
 }
 
 @Composable
-private fun RecentTransactionRow(transaction: TransactionRecordResponse) {
+private fun RecentTransactionRow(
+    transaction: TransactionRecordResponse,
+    onClick: () -> Unit = {}
+) {
     val isDebit = transaction.direction.lowercase() == "debit"
     val colorScheme = MaterialTheme.colorScheme
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = GlassCard),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -1260,6 +1388,123 @@ private fun EmptyState(
             }
         }
     }
+}
+
+@Composable
+private fun NetWorthExplanationDialog(
+    onDismiss: () -> Unit,
+    onViewAccounts: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                Icons.Default.Info,
+                contentDescription = null,
+                tint = AccentPrimary,
+                modifier = Modifier.size(32.dp)
+            )
+        },
+        title = {
+            Text(
+                "Understanding Net Worth",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = colorScheme.onSurface
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    "Net worth is calculated as the sum of all your account balances:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colorScheme.onSurface
+                )
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = AccentPrimary.copy(alpha = 0.1f)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = com.example.monytix.ui.theme.Success,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                "Assets: Savings, Checking, Investments",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colorScheme.onSurface
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = com.example.monytix.ui.theme.ChartRed,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                "Liabilities: Credit cards, Loans, Debt",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+                
+                Text(
+                    "Net Worth = Total Assets - Total Liabilities",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AccentPrimary
+                )
+                
+                Text(
+                    "A positive net worth means your assets exceed your liabilities. View detailed account breakdowns in SpendSense.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onViewAccounts,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = AccentPrimary,
+                    contentColor = colorScheme.onPrimary
+                )
+            ) {
+                Text("View Accounts")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Got it", color = colorScheme.onSurface)
+            }
+        },
+        containerColor = colorScheme.surface,
+        shape = RoundedCornerShape(24.dp)
+    )
 }
 
 private fun formatCurrency(amount: Double): String {
