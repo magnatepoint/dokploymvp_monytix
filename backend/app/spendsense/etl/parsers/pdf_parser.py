@@ -221,15 +221,15 @@ def parse_pdf_file(data: bytes, filename: str, password: str | None = None) -> l
             bank_code = infer_bank_code(filename, sample_text=sample)
             buffer.seek(0)
 
-    # SBI, Canara, Axis, Kotak: table extraction produces poor results. Prefer text-based parsers.
-    if bank_code in ("sbi_bank", "canara_bank", "axis_bank", "kotak_bank"):
+    # SBI, Canara, Axis, Kotak, Federal: table extraction often wrong (header row = account names). Prefer text-based parsers.
+    if bank_code in ("sbi_bank", "canara_bank", "axis_bank", "kotak_bank", "federal_bank"):
         logger.info("Using line-based parser for %s (bank=%s)", filename, bank_code)
         if not lines:
             lines = _extract_lines_with_pdfplumber(buffer, password=password)
         if not lines:
             lines = _extract_lines_with_pymupdf(buffer, password=password)
         if lines:
-            parser_map = {"sbi_bank": "SBI", "canara_bank": "Canara", "axis_bank": "Axis", "kotak_bank": "Kotak"}
+            parser_map = {"sbi_bank": "SBI", "canara_bank": "Canara", "axis_bank": "Axis", "kotak_bank": "Kotak", "federal_bank": "Federal"}
             target = parser_map.get(bank_code)
             if target:
                 for bank_name, parser in BANK_PARSERS:

@@ -5,11 +5,11 @@ from pathlib import Path
 import asyncpg
 from dotenv import load_dotenv
 
-async def run_migrations():
+async def run_migrations(single_migration: str | None = None):
     # Load .env from backend directory
     backend_dir = Path(__file__).resolve().parents[2]
     env_path = backend_dir / ".env"
-    
+
     if env_path.exists():
         load_dotenv(env_path)
     else:
@@ -26,13 +26,22 @@ async def run_migrations():
         print(f"ERROR: Migrations directory not found at {migrations_dir}")
         sys.exit(1)
 
-    # Get sorted migration files
-    migrations = sorted(list(migrations_dir.glob("*.sql")))
-    if not migrations:
-        print("No migration files found.")
-        return
-
-    print(f"Found {len(migrations)} migration files.")
+    if single_migration:
+        # Run only the given file (e.g. 073_financial_classification_schema.sql)
+        path = migrations_dir / single_migration
+        if not path.exists():
+            path = migrations_dir / (single_migration + ".sql")
+        if not path.exists():
+            print(f"ERROR: Migration not found: {single_migration}")
+            sys.exit(1)
+        migrations = [path]
+        print(f"Running single migration: {path.name}")
+    else:
+        migrations = sorted(list(migrations_dir.glob("*.sql")))
+        if not migrations:
+            print("No migration files found.")
+            return
+        print(f"Found {len(migrations)} migration files.")
 
     try:
         conn = await asyncpg.connect(postgres_url)
@@ -66,4 +75,5 @@ async def run_migrations():
         await conn.close()
 
 if __name__ == "__main__":
-    asyncio.run(run_migrations())
+    single = sys.argv[1] if len(sys.argv) > 1 else None
+    asyncio.run(run_migrations(single_migration=single))

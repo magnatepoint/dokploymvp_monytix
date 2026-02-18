@@ -4,6 +4,7 @@ from typing import Iterable
 
 from ..models import StagingRecord
 from ..services.category_inference import _infer_category_from_keywords, _looks_like_personal_name
+from ..services.financial_classification import classify_financial
 from ..services.ml_category_model import ml_predict_category
 from ..services.merchant_lookup import lookup_merchant_category
 
@@ -709,6 +710,56 @@ async def enrich_transactions(
                     parsed_id,
                 )
             logger.info(f"Applied {len(personal_name_overrides)} personal name overrides")
+        
+        # Financial classification for batch-inserted rows (rule-matched)
+        if inserted_result:
+            parsed_ids = [r["parsed_id"] for r in inserted_result]
+            batch_rows = await conn.fetch(
+                """
+                SELECT te.parsed_id, tp.raw_description, tp.counterparty_name, tp.counterparty_vpa,
+                    tp.channel_type, tp.cr_dr, tp.direction,
+                    te.category_id, te.cat_l1, te.transfer_type, te.is_card_payment,
+                    te.is_loan_payment, te.is_investment, te.amount
+                FROM spendsense.txn_enriched te
+                JOIN spendsense.txn_parsed tp ON tp.parsed_id = te.parsed_id
+                WHERE te.parsed_id = ANY($1::bigint[])
+                """,
+                parsed_ids,
+            )
+            for r in batch_rows:
+                out = (r["direction"] or "").upper() == "OUT" or (r["cr_dr"] or "").upper() == "D"
+                cat = (r["category_id"] or "").strip().lower()
+                merchant_flag = cat not in ("transfers_out", "transfers_in")
+                fc = classify_financial(
+                    channel_type=r["channel_type"],
+                    cr_dr=r["cr_dr"],
+                    direction=r["direction"],
+                    raw_description=r["raw_description"],
+                    counterparty_name=r["counterparty_name"],
+                    counterparty_vpa=r["counterparty_vpa"],
+                    category_id=r["category_id"],
+                    cat_l1=r["cat_l1"],
+                    transfer_type=r["transfer_type"],
+                    is_card_payment=bool(r["is_card_payment"]),
+                    is_loan_payment=bool(r["is_loan_payment"]),
+                    is_investment=bool(r["is_investment"]),
+                    merchant_flag=merchant_flag,
+                    amount=float(r["amount"] or 0),
+                )
+                await conn.execute(
+                    """
+                    UPDATE spendsense.txn_enriched
+                    SET financial_class = $1, obligation_flag = $2, instrument_type = $3,
+                        counterparty_type = $4, priority_rank = $5
+                    WHERE parsed_id = $6
+                    """,
+                    fc.financial_class,
+                    fc.obligation_flag,
+                    fc.instrument_type,
+                    fc.counterparty_type,
+                    fc.priority_rank,
+                    r["parsed_id"],
+                )
         
         # For unmatched transactions, use Python-based inference (ML + heuristic)
         # Fetch unmatched transactions

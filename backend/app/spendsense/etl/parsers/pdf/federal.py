@@ -38,7 +38,8 @@ def parse_federal_pdf(lines: list[str]) -> pd.DataFrame | None:
             end_year = int(m.group(1))
             break
 
-    date_regex = re.compile(r"^(\d{2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*$", re.I)
+    # Allow 1 or 2 digit day (e.g. "1 Dec" or "01 Dec")
+    date_regex = re.compile(r"^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*$", re.I)
     # Amount and balance: same line "5,000.00 17,860.76" OR separate lines
     amount_balance_regex = re.compile(r"^([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s*$")
     single_amount_regex = re.compile(r"^([\d,]+\.?\d*)\s*$")
@@ -58,11 +59,12 @@ def parse_federal_pdf(lines: list[str]) -> pd.DataFrame | None:
             i += 1
             continue
 
-        day = date_match.group(1)
+        day_str = date_match.group(1)
         mon = date_match.group(2)
         mon_num = MONTH_TO_NUM.get(mon.lower(), "01")
         year = start_year if mon.lower() in ("apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec") else end_year
-        txn_date = date(year, int(mon_num), int(day))
+        day = int(day_str)
+        txn_date = date(year, int(mon_num), day)
         i += 1
 
         description_parts: list[str] = []
