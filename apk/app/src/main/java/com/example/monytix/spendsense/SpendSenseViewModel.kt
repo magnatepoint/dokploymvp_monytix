@@ -48,6 +48,7 @@ data class SpendSenseUiState(
     val transferBreakdownLoading: Boolean = false,
     val categories: List<CategoryResponse> = emptyList(),
     val subcategories: List<SubcategoryResponse> = emptyList(),
+    val subcategoryBreakdown: List<com.example.monytix.spendsense.components.SubcategoryBreakdownItem> = emptyList(),
     val channels: List<String> = emptyList(),
     val accounts: List<AccountItemResponse> = emptyList(),
     val userEmail: String? = null,
@@ -132,6 +133,73 @@ class SpendSenseViewModel : ViewModel() {
             result.getOrNull()?.let { subs ->
                 _uiState.update { it.copy(subcategories = subs) }
             }
+        }
+    }
+
+    fun loadSubcategoryBreakdown(categoryCode: String?) {
+        viewModelScope.launch {
+            val token = getAccessToken() ?: return@launch
+            if (categoryCode == null) {
+                _uiState.update { it.copy(subcategoryBreakdown = emptyList()) }
+                return@launch
+            }
+            
+            // Fetch all transactions for this category
+            val allTransactions = mutableListOf<TransactionRecordResponse>()
+            var offset = 0
+            val limit = 100
+            var hasMore = true
+            
+            while (hasMore) {
+                val result = withContext(Dispatchers.IO) {
+                    BackendApi.getTransactions(
+                        token,
+                        limit = limit,
+                        offset = offset,
+                        categoryCode = categoryCode,
+                        direction = "debit"
+                    )
+                }
+                result.getOrNull()?.let { response ->
+                    allTransactions.addAll(response.transactions)
+                    hasMore = response.transactions.size == limit
+                    offset += limit
+                } ?: run {
+                    hasMore = false
+                }
+            }
+            
+            // Calculate subcategory breakdown
+            val subcategoryMap = mutableMapOf<String, Pair<Double, Int>>() // amount, count
+            allTransactions.forEach { txn ->
+                val subcatCode = txn.subcategory ?: "uncategorized"
+                val current = subcategoryMap[subcatCode] ?: Pair(0.0, 0)
+                subcategoryMap[subcatCode] = Pair(current.first + txn.amount, current.second + 1)
+            }
+            
+            val totalAmount = subcategoryMap.values.sumOf { it.first }
+            
+            // Get subcategory names
+            val subcategoriesResult = withContext(Dispatchers.IO) {
+                BackendApi.getSubcategories(token, categoryCode)
+            }
+            val subcategoryNames = subcategoriesResult.getOrNull()?.associate { 
+                it.subcategory_code to it.subcategory_name 
+            } ?: emptyMap()
+            
+            val breakdown = subcategoryMap.map { (code, data) ->
+                com.example.monytix.spendsense.components.SubcategoryBreakdownItem(
+                    subcategory_code = code,
+                    subcategory_name = subcategoryNames[code] ?: code.replace("_", " ").split(" ").joinToString(" ") { 
+                        it.replaceFirstChar { char -> char.uppercaseChar() }
+                    },
+                    amount = data.first,
+                    percentage = if (totalAmount > 0) (data.first / totalAmount) * 100.0 else 0.0,
+                    transaction_count = data.second
+                )
+            }.sortedByDescending { it.amount }
+            
+            _uiState.update { it.copy(subcategoryBreakdown = breakdown) }
         }
     }
 

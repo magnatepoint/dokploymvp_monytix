@@ -488,7 +488,7 @@ private fun categoriesTabContent(
             item {
                 Text("Top Categories", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             }
-            items(kpis.top_categories) { cat ->
+            items(kpis.top_categories, key = { it.category_code }) { cat ->
                 CategoryCard(category = cat)
             }
         }
@@ -1067,7 +1067,9 @@ private fun TransactionsTab(
                 onRetry = { viewModel.loadTransactions(1, append = false) }
             )
         } else {
-            val grouped = uiState.transactions.groupBy { txn ->
+            // Deduplicate transactions by txn_id to avoid duplicate keys
+            val uniqueTransactions = uiState.transactions.distinctBy { it.txn_id }
+            val grouped = uniqueTransactions.groupBy { txn ->
                 try {
                     val d = java.time.LocalDate.parse(txn.txn_date)
                     d.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(Locale.getDefault()))
@@ -1080,7 +1082,7 @@ private fun TransactionsTab(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item {
+                item(key = "confidence_header") {
                     Row(
                         Modifier.fillMaxWidth().padding(bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1094,14 +1096,14 @@ private fun TransactionsTab(
                     }
                 }
                 grouped.forEach { (date, txns) ->
-                    item {
+                    item(key = "date_header_$date") {
                         Text(
                             "$date (${txns.size})",
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                         )
                     }
-                    items(txns, key = { it.txn_id }) { txn ->
+                    itemsIndexed(txns, key = { index, txn -> "txn_${txn.txn_id}_${date}_$index" }) { _, txn ->
                         TransactionRow(
                             transaction = txn,
                             viewModel = viewModel,
@@ -1109,10 +1111,10 @@ private fun TransactionsTab(
                         )
                     }
                 }
-                if (uiState.transactionsTotal > uiState.transactions.size) {
-                    item {
+                if (uiState.transactionsTotal > uniqueTransactions.size) {
+                    item(key = "load_more_button") {
                         Button(
-                            onClick = { viewModel.loadTransactions((uiState.transactions.size / 25) + 2, append = true) },
+                            onClick = { viewModel.loadTransactions((uniqueTransactions.size / 25) + 2, append = true) },
                             modifier = Modifier.fillMaxWidth(),
                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = GlassCard, contentColor = MaterialTheme.colorScheme.onSurface)
                         ) {
@@ -2067,8 +2069,7 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
             item {
                 Text("Alerts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = ChartOrange)
             }
-            items(alerts.size) { i ->
-                val alert = alerts[i]
+            itemsIndexed(alerts, key = { index, item -> "alert_${index}_${item.text.hashCode()}" }) { i, alert ->
                 AnimatedVisibility(
                     visible = true,
                     enter = slideInVertically(animationSpec = tween(400), initialOffsetY = { it / 2 }) + fadeIn(animationSpec = tween(400))
@@ -2086,8 +2087,8 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
                 Spacer(Modifier.height(8.dp))
                 Text("Optimization Opportunities", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Success)
             }
-            items(opportunities.size) { i ->
-                InsightBanner(insight = opportunities[i].text, color = Success, emoji = "🟢")
+            itemsIndexed(opportunities, key = { index, item -> "opportunity_${index}_${item.text.hashCode()}" }) { i, opportunity ->
+                InsightBanner(insight = opportunity.text, color = Success, emoji = "🟢")
             }
         }
         if (patterns.isNotEmpty()) {
@@ -2095,8 +2096,8 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
                 Spacer(Modifier.height(8.dp))
                 Text("Behavioral Patterns", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = AccentPrimary)
             }
-            items(patterns.size) { i ->
-                InsightBanner(insight = patterns[i].text, color = AccentPrimary, emoji = "🔵")
+            itemsIndexed(patterns, key = { index, item -> "pattern_${index}_${item.text.hashCode()}" }) { i, pattern ->
+                InsightBanner(insight = pattern.text, color = AccentPrimary, emoji = "🔵")
             }
         }
         if (alerts.isEmpty() && opportunities.isEmpty() && patterns.isEmpty()) {
@@ -2132,9 +2133,14 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
                 totalAmount = total,
                 deltaByCategory = deltaByCategory,
                 onCategorySelected = { category ->
-                    // Optional: Could navigate to category details
+                    // Load subcategory breakdown when category is selected
+                    viewModel.loadSubcategoryBreakdown(category.category_code)
                 },
-                getTrendLabel = { item -> viewModel.categoryTrendLabel(item) }
+                getTrendLabel = { item -> viewModel.categoryTrendLabel(item) },
+                subcategoryBreakdown = uiState.subcategoryBreakdown,
+                onLoadSubcategoryBreakdown = { categoryCode ->
+                    viewModel.loadSubcategoryBreakdown(categoryCode)
+                }
             )
         }
     }
