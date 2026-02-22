@@ -50,10 +50,10 @@ For email confirmation links and OAuth to work:
 Add your backend URL to `local.properties`:
 
 ```properties
-# Default (no BACKEND_URL): uses https://backend.monytix.ai
+# Default (no BACKEND_URL): uses http://34.14.136.76:8001
 # Local dev - emulator: BACKEND_URL=http://10.0.2.2:8000
 # Local dev - physical device: BACKEND_URL=http://YOUR_IP:8000
-BACKEND_URL=https://backend.monytix.ai
+BACKEND_URL=http://34.14.136.76:8001
 ```
 
 Start the backend from the project root:

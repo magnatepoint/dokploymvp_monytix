@@ -339,6 +339,38 @@ object BackendApi {
         }
     }
 
+    suspend fun getTransactionsSummary(
+        accessToken: String,
+        startDate: String? = null,
+        endDate: String? = null,
+        direction: String? = null,
+        categoryCode: String? = null,
+        subcategoryCode: String? = null,
+        channel: String? = null,
+        bankCode: String? = null,
+        search: String? = null
+    ): Result<TransactionSummaryResponse> = withContext(Dispatchers.IO) {
+        try {
+            val params = buildList {
+                startDate?.let { add("start_date=$it") }
+                endDate?.let { add("end_date=$it") }
+                direction?.let { add("direction=$it") }
+                categoryCode?.let { add("category_code=$it") }
+                subcategoryCode?.let { add("subcategory_code=$it") }
+                channel?.let { add("channel=$it") }
+                bankCode?.let { add("bank_code=$it") }
+                search?.let { add("search=${java.net.URLEncoder.encode(it, "UTF-8")}") }
+            }
+            val url = "$spendsenseBase/transactions/summary?${params.joinToString("&")}"
+            val response = client.get(url) {
+                header("Authorization", "Bearer $accessToken")
+            }.body<TransactionSummaryResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun updateTransaction(
         accessToken: String,
         txnId: String,
@@ -959,6 +991,13 @@ data class TransactionListResponse(
     val total: Int = 0,
     val page: Int = 1,
     val page_size: Int = 25
+)
+
+data class TransactionSummaryResponse(
+    val debit_total: Double = 0.0,
+    val credit_total: Double = 0.0,
+    val debit_count: Int = 0,
+    val credit_count: Int = 0
 )
 
 @kotlinx.serialization.Serializable

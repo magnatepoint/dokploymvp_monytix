@@ -11,7 +11,7 @@ import type {
   GoalUpdateRequest,
 } from '@/types/goals'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://34.14.136.76:8001'
 
 // Fetch goal catalog
 export async function fetchGoalCatalog(session: Session): Promise<GoalCatalogItem[]> {

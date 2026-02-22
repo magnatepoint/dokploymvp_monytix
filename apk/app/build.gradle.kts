@@ -15,8 +15,8 @@ android {
         applicationId = "com.example.monytix"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -32,7 +32,7 @@ android {
             else "your-key"
         val backendUrl = props?.getProperty("BACKEND_URL")
             ?: if (project.hasProperty("ciRelease")) null
-            else "https://backend.monytix.ai"
+            else "http://34.14.136.76:8001"
         if (project.hasProperty("ciRelease") && (supabaseUrl.isNullOrBlank() || supabaseKey.isNullOrBlank() || backendUrl.isNullOrBlank())) {
             throw GradleException(
                 "CI release build requires SUPABASE_URL, SUPABASE_ANON_KEY, BACKEND_URL in local.properties or env. " +
@@ -57,12 +57,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-    }
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
 }
 

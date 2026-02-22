@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 
 /** Holds pending file upload - survives activity recreation, triggers recomposition */
 object PendingUploadHolder {
@@ -56,7 +58,15 @@ data class SpendSenseUiState(
     val error: String? = null,
     val searchQuery: String = "",
     val transactionFilters: TransactionFilters = TransactionFilters(),
+    val debitCreditSummary: DebitCreditSummary? = null,
     val goalUpdatedToast: String? = null
+)
+
+data class DebitCreditSummary(
+    val debitTotal: Double,
+    val creditTotal: Double,
+    val debitCount: Int,
+    val creditCount: Int
 )
 
 data class TransactionFilters(
@@ -313,10 +323,68 @@ class SpendSenseViewModel : ViewModel() {
     fun setTransactionFilters(filters: TransactionFilters) {
         _uiState.update { it.copy(transactionFilters = filters) }
         loadTransactions(1, append = false)
+        loadDebitCreditSummary()
     }
 
     fun applyFiltersAndLoad() {
         loadTransactions(1, append = false)
+        loadDebitCreditSummary()
+    }
+
+    /** If no date filter is set, set to current month and return true. Otherwise return false. */
+    fun ensureDefaultTransactionDateRange(): Boolean {
+        val f = _uiState.value.transactionFilters
+        if (f.startDate != null || f.endDate != null) return false
+        val now = LocalDate.now()
+        val start = now.withDayOfMonth(1)
+        val end = now.with(TemporalAdjusters.lastDayOfMonth())
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+        _uiState.update {
+            it.copy(
+                transactionFilters = f.copy(
+                    startDate = start.format(formatter),
+                    endDate = end.format(formatter)
+                )
+            )
+        }
+        return true
+    }
+
+    fun loadDebitCreditSummary() {
+        viewModelScope.launch {
+            val token = getAccessToken() ?: return@launch
+            val f = _uiState.value.transactionFilters
+            val result = withContext(Dispatchers.IO) {
+                BackendApi.getTransactionsSummary(
+                    token,
+                    startDate = f.startDate,
+                    endDate = f.endDate,
+                    direction = f.direction,
+                    categoryCode = f.categoryCode,
+                    subcategoryCode = f.subcategoryCode,
+                    channel = f.channel,
+                    bankCode = f.bankCode,
+                    search = _uiState.value.searchQuery.takeIf { it.isNotBlank() }
+                )
+            }
+            result.fold(
+                onSuccess = { resp ->
+                    _uiState.update {
+                        it.copy(
+                            debitCreditSummary = DebitCreditSummary(
+                                debitTotal = resp.debit_total,
+                                creditTotal = resp.credit_total,
+                                debitCount = resp.debit_count,
+                                creditCount = resp.credit_count
+                            )
+                        )
+                    }
+                },
+                onFailure = {
+                    _uiState.update { it.copy(debitCreditSummary = null) }
+                }
+            )
+        }
     }
 
     fun setSelectedMonth(month: String?) {

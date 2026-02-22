@@ -17,6 +17,7 @@ from .models import (
     TransactionCreateResponse,
     TransactionListResponse,
     TransactionRecord,
+    TransactionSummaryResponse,
     TransactionUpdate,
     UpdatedGoalItem,
     UploadBatch,
@@ -279,6 +280,42 @@ async def list_transactions(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get(
+    "/transactions/summary",
+    response_model=TransactionSummaryResponse,
+    summary="Debit/credit totals and counts for filtered period",
+)
+async def get_transactions_summary(
+    search: str | None = Query(None, max_length=120),
+    category_code: str | None = Query(None),
+    subcategory_code: str | None = Query(None),
+    channel: str | None = Query(None),
+    direction: str | None = Query(None, description="Filter by direction: debit or credit"),
+    bank_code: str | None = Query(None, description="Filter by bank (e.g. hdfc_bank, axis_bank)"),
+    start_date: str | None = Query(None, description="Start date in YYYY-MM-DD format"),
+    end_date: str | None = Query(None, description="End date in YYYY-MM-DD format"),
+    user: AuthenticatedUser = Depends(get_current_user),
+    service: SpendSenseService = Depends(get_service),
+) -> TransactionSummaryResponse:
+    debit_total, credit_total, debit_count, credit_count = await service.get_transactions_summary(
+        user.user_id,
+        search=search,
+        category_code=category_code,
+        subcategory_code=subcategory_code,
+        channel=channel,
+        start_date=start_date,
+        end_date=end_date,
+        direction=direction,
+        bank_code=bank_code,
+    )
+    return TransactionSummaryResponse(
+        debit_total=debit_total,
+        credit_total=credit_total,
+        debit_count=debit_count,
+        credit_count=credit_count,
     )
 
 

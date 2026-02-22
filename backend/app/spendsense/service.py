@@ -711,20 +711,19 @@ class SpendSenseService:
             error_message=row["error_message"],
         )
 
-    async def list_transactions(
+    def _build_transaction_where(
         self,
         user_id: str,
-        limit: int,
-        offset: int,
         search: str | None = None,
         category_code: str | None = None,
         subcategory_code: str | None = None,
         channel: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-        **kwargs: Any,
-    ) -> tuple[List[TransactionRecord], int]:
-        """List transactions with pagination and optional filters."""
+        direction: str | None = None,
+        bank_code: str | None = None,
+    ) -> tuple[str, list[Any]]:
+        """Build WHERE clause and params for transaction list/summary. Returns (where_sql, params)."""
         where_clauses = ["v.user_id = $1"]
         params: list[Any] = [user_id]
         placeholder = 2
@@ -740,14 +739,14 @@ class SpendSenseService:
                 s_date = datetime.strptime(start_date, "%Y-%m-%d").date()
                 add_clause("v.txn_date >= ${idx}", s_date)
             except ValueError:
-                pass  # Ignore invalid dates
+                pass
 
         if end_date:
             try:
                 e_date = datetime.strptime(end_date, "%Y-%m-%d").date()
                 add_clause("v.txn_date <= ${idx}", e_date)
             except ValueError:
-                pass  # Ignore invalid dates
+                pass
 
         if search:
             search_value = f"%{search.strip()}%"
@@ -765,17 +764,42 @@ class SpendSenseService:
         if channel:
             add_clause("LOWER(v.channel) = LOWER(${idx})", channel)
 
-        if kwargs.get("direction"):
-            direction_value = kwargs["direction"]
-            if direction_value in ("debit", "credit"):
-                add_clause("v.direction = ${idx}", direction_value)
+        if direction and direction in ("debit", "credit"):
+            add_clause("v.direction = ${idx}", direction)
 
-        if kwargs.get("bank_code"):
-            bank_value = kwargs["bank_code"].strip()
+        if bank_code:
+            bank_value = bank_code.strip()
             if bank_value:
                 add_clause("LOWER(v.bank_code) = LOWER(${idx})", bank_value)
 
-        where_sql = " AND ".join(where_clauses)
+        return " AND ".join(where_clauses), params
+
+    async def list_transactions(
+        self,
+        user_id: str,
+        limit: int,
+        offset: int,
+        search: str | None = None,
+        category_code: str | None = None,
+        subcategory_code: str | None = None,
+        channel: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        **kwargs: Any,
+    ) -> tuple[List[TransactionRecord], int]:
+        """List transactions with pagination and optional filters."""
+        where_sql, params = self._build_transaction_where(
+            user_id,
+            search=search,
+            category_code=category_code,
+            subcategory_code=subcategory_code,
+            channel=channel,
+            start_date=start_date,
+            end_date=end_date,
+            direction=kwargs.get("direction"),
+            bank_code=kwargs.get("bank_code"),
+        )
+        placeholder = len(params) + 1
 
         count_query = f"""
         SELECT COUNT(*) as total
@@ -869,6 +893,53 @@ class SpendSenseService:
             ],
             total_count,
         )
+
+    async def get_transactions_summary(
+        self,
+        user_id: str,
+        search: str | None = None,
+        category_code: str | None = None,
+        subcategory_code: str | None = None,
+        channel: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        direction: str | None = None,
+        bank_code: str | None = None,
+    ) -> tuple[float, float, int, int]:
+        """Return (debit_total, credit_total, debit_count, credit_count) for the given filters."""
+        where_sql, params = self._build_transaction_where(
+            user_id,
+            search=search,
+            category_code=category_code,
+            subcategory_code=subcategory_code,
+            channel=channel,
+            start_date=start_date,
+            end_date=end_date,
+            direction=direction,
+            bank_code=bank_code,
+        )
+        agg_query = f"""
+        SELECT v.direction, COUNT(*) AS cnt, COALESCE(SUM(v.amount), 0) AS total
+        FROM spendsense.vw_txn_effective v
+        WHERE {where_sql}
+        GROUP BY v.direction
+        """
+        rows = await self._pool.fetch(agg_query, *params)
+        debit_total = 0.0
+        credit_total = 0.0
+        debit_count = 0
+        credit_count = 0
+        for row in rows:
+            d = str(row["direction"]).lower()
+            cnt = int(row["cnt"])
+            total = float(row["total"])
+            if d == "debit":
+                debit_total = total
+                debit_count = cnt
+            elif d == "credit":
+                credit_total = total
+                credit_count = cnt
+        return (debit_total, credit_total, debit_count, credit_count)
 
     async def delete_all_user_data(self, user_id: str) -> dict[str, Any]:
         """Delete user transaction and related data. Returns counts of deleted records.

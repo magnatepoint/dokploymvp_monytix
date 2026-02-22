@@ -50,6 +50,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.TrendingDown
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -84,6 +86,8 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -822,7 +826,9 @@ private fun TransactionsTab(
     }
 
     LaunchedEffect(Unit) {
+        viewModel.ensureDefaultTransactionDateRange()
         viewModel.loadTransactions(1, append = false)
+        viewModel.loadDebitCreditSummary()
         viewModel.loadInsights()
     }
 
@@ -832,14 +838,112 @@ private fun TransactionsTab(
         filters.startDate != null || filters.endDate != null
 
     var selectedTransaction by remember { mutableStateOf<TransactionRecordResponse?>(null) }
+    var manualAddDirection by remember { mutableStateOf<String?>(null) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var channelExpanded by remember { mutableStateOf(false) }
     var directionExpanded by remember { mutableStateOf(false) }
     var bankExpanded by remember { mutableStateOf(false) }
     var dateExpanded by remember { mutableStateOf(false) }
 
+    val debitCreditSummary = uiState.debitCreditSummary
+
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable {
+                        manualAddDirection = "debit"
+                        showManualAdd = true
+                    }
+                    .semantics { contentDescription = "Add debit" },
+                colors = CardDefaults.cardColors(containerColor = ChartRed.copy(alpha = 0.15f)),
+                shape = RoundedCornerShape(12.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Default.TrendingDown,
+                        contentDescription = null,
+                        tint = ChartRed,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Debit",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    debitCreditSummary?.let { s ->
+                        Text(
+                            "-${formatCurrency(s.debitTotal)}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "${s.debitCount} debits",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable {
+                        manualAddDirection = "credit"
+                        showManualAdd = true
+                    }
+                    .semantics { contentDescription = "Add credit" },
+                colors = CardDefaults.cardColors(containerColor = Success.copy(alpha = 0.15f)),
+                shape = RoundedCornerShape(12.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Default.TrendingUp,
+                        contentDescription = null,
+                        tint = Success,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Credit",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    debitCreditSummary?.let { s ->
+                        Text(
+                            "+${formatCurrency(s.creditTotal)}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "${s.creditCount} credits",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
         Row(
             Modifier
                 .horizontalScroll(rememberScrollState())
@@ -1156,11 +1260,13 @@ private fun TransactionsTab(
     if (showManualAdd) {
         ManualAddDialog(
             viewModel = viewModel,
-            onDismiss = { showManualAdd = false },
+            onDismiss = { showManualAdd = false; manualAddDirection = null },
             onSubmit = { date, merchant, desc, amount, direction, catCode, subCode, channel ->
                 viewModel.createTransaction(date, merchant, desc, amount, direction, catCode, subCode, channel)
                 showManualAdd = false
-            }
+                manualAddDirection = null
+            },
+            initialDirection = manualAddDirection ?: "debit"
         )
     }
 
@@ -1759,7 +1865,8 @@ private fun UploadStatementDialog(
 private fun ManualAddDialog(
     viewModel: SpendSenseViewModel,
     onDismiss: () -> Unit,
-    onSubmit: (String, String, String?, Double, String, String?, String?, String?) -> Unit
+    onSubmit: (String, String, String?, Double, String, String?, String?, String?) -> Unit,
+    initialDirection: String = "debit"
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val colorScheme = MaterialTheme.colorScheme
@@ -1767,7 +1874,7 @@ private fun ManualAddDialog(
     var merchant by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var direction by remember { mutableStateOf("debit") }
+    var direction by remember(initialDirection) { mutableStateOf(initialDirection) }
     var categoryCode by remember { mutableStateOf("") }
     var subcategoryCode by remember { mutableStateOf("") }
     var channel by remember { mutableStateOf<String?>(null) }

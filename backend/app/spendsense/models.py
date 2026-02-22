@@ -91,6 +91,13 @@ class TransactionListResponse(BaseModel):
     page_size: int
 
 
+class TransactionSummaryResponse(BaseModel):
+    debit_total: float = 0.0
+    credit_total: float = 0.0
+    debit_count: int = 0
+    credit_count: int = 0
+
+
 class TransactionCreate(BaseModel):
     txn_date: date
     merchant_name: str

@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://34.14.136.76:8001'
 const UPLOAD_TIMEOUT = 60000 // 60 seconds for file uploads
 
 export interface UploadProgress {
