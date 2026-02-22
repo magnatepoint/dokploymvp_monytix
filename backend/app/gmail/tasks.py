@@ -13,6 +13,7 @@ from googleapiclient.discovery import build
 from app.celery_app import celery_app
 from app.core.config import get_settings
 from app.gmail.persistence import persist_records_async
+from app.gmail.message_store import mark_message_result, mark_message_started
 from app.spendsense.etl.parsers import parse_email_payload
 
 settings = get_settings()
