@@ -1,24 +1,19 @@
 # Multi-stage build for optimized production image
+# Note: build-essential removed to save ~336MB during build (all deps use pre-built wheels)
 FROM python:3.11-slim as builder
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set working directory
 WORKDIR /app
 
 # Copy dependency files (split to reduce peak disk during build)
 COPY pyproject.toml requirements*.txt ./
 
-# Install Python dependencies in batches to reduce peak disk usage (helps low-disk servers)
+# Install Python dependencies in small batches to reduce peak disk (helps low-disk servers)
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
-RUN pip install --no-cache-dir -r requirements-core.txt && rm -rf /tmp/*
-RUN pip install --no-cache-dir -r requirements-data.txt && rm -rf /tmp/*
-RUN pip install --no-cache-dir -r requirements-ml.txt && rm -rf /tmp/*
-RUN pip install --no-cache-dir -r requirements-google.txt && rm -rf /tmp/*
+RUN pip install --no-cache-dir -r requirements-core.txt && rm -rf /tmp/* /root/.cache/*
+RUN pip install --no-cache-dir -r requirements-data1.txt && rm -rf /tmp/* /root/.cache/*
+RUN pip install --no-cache-dir -r requirements-data2.txt && rm -rf /tmp/* /root/.cache/*
+RUN pip install --no-cache-dir -r requirements-ml.txt && rm -rf /tmp/* /root/.cache/*
+RUN pip install --no-cache-dir -r requirements-google.txt && rm -rf /tmp/* /root/.cache/*
 
 # Production stage
 FROM python:3.11-slim
