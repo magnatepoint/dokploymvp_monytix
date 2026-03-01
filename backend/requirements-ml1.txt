@@ -1,0 +1,2 @@
+# scipy first (~35MB) - split to reduce peak disk during build
+scipy>=1.10.0

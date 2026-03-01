@@ -18,11 +18,13 @@ docker builder prune -a -f
 
 ## 2. Code-level mitigation (already applied)
 
-The backend Dockerfile installs dependencies in **4 batches** instead of one large `pip install`. This reduces peak disk usage during build:
+The backend Dockerfile installs dependencies in **7 batches** instead of one large `pip install`. This reduces peak disk usage during build:
 
 - `requirements-core.txt` – FastAPI, Celery, Redis, etc.
-- `requirements-data.txt` – pandas, pdfplumber, PyMuPDF
-- `requirements-ml.txt` – scikit-learn
+- `requirements-data1.txt` – pandas, openpyxl, xlrd
+- `requirements-data2.txt` – pdfplumber, PyMuPDF
+- `requirements-ml1.txt` – scipy (~35MB)
+- `requirements-ml2.txt` – scikit-learn
 - `requirements-google.txt` – Firebase, Google Cloud Pub/Sub
 
 Each batch cleans `/tmp` before the next, which can help on low-disk servers.

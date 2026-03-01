@@ -1,0 +1,2 @@
+# scikit-learn (~9MB) - uses already-installed scipy
+scikit-learn>=1.4.0,<2.0.0

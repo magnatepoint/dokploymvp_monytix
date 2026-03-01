@@ -12,7 +12,8 @@ RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements-core.txt && rm -rf /tmp/* /root/.cache/*
 RUN pip install --no-cache-dir -r requirements-data1.txt && rm -rf /tmp/* /root/.cache/*
 RUN pip install --no-cache-dir -r requirements-data2.txt && rm -rf /tmp/* /root/.cache/*
-RUN pip install --no-cache-dir -r requirements-ml.txt && rm -rf /tmp/* /root/.cache/*
+RUN pip install --no-cache-dir -r requirements-ml1.txt && rm -rf /tmp/* /root/.cache/*
+RUN pip install --no-cache-dir -r requirements-ml2.txt && rm -rf /tmp/* /root/.cache/*
 RUN pip install --no-cache-dir -r requirements-google.txt && rm -rf /tmp/* /root/.cache/*
 
 # Production stage
