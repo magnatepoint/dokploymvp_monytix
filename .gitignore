@@ -33,6 +33,7 @@ logs/
 *.pem
 gmail-pubsub-key.json
 backend/.env
+*-firebase-adminsdk-*.json
 
 # PIDs
 backend/.pids/
