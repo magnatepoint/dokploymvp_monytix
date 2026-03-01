@@ -8,9 +8,9 @@ import com.example.monytix.data.TransactionCreateRequest
 import com.example.monytix.data.BudgetRecommendation
 import com.example.monytix.data.CommittedBudget
 import com.example.monytix.data.BudgetVariance
-import com.example.monytix.data.Supabase
 import com.example.monytix.goaltracker.GoalUpdateCache
-import io.github.jan.supabase.auth.auth
+import com.example.monytix.analytics.AnalyticsHelper
+import com.example.monytix.auth.FirebaseAuthManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -72,8 +72,8 @@ class BudgetPilotViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(BudgetPilotUiState())
     val uiState: StateFlow<BudgetPilotUiState> = _uiState.asStateFlow()
 
-    private fun getAccessToken(): String? =
-        Supabase.client.auth.currentSessionOrNull()?.accessToken
+    private suspend fun getAccessToken(): String? =
+        FirebaseAuthManager.getIdToken()
 
     init {
         loadSession()
@@ -95,6 +95,7 @@ class BudgetPilotViewModel : ViewModel() {
     }
 
     fun setMonth(month: String) {
+        AnalyticsHelper.logEvent("month_changed", mapOf("month" to month))
         _uiState.update { it.copy(selectedMonth = month) }
         loadData()
     }
@@ -294,6 +295,7 @@ class BudgetPilotViewModel : ViewModel() {
             Log.d("BudgetPilot", "commitBudget: result isSuccess=${result.isSuccess}")
             result.fold(
                 onSuccess = { budget ->
+                    AnalyticsHelper.logEvent("budget_committed", mapOf("plan_code" to budget.plan_code))
                     Log.d("BudgetPilot", "commitBudget: success plan_code=${budget.plan_code}")
                     _uiState.update {
                         it.copy(
@@ -319,6 +321,7 @@ class BudgetPilotViewModel : ViewModel() {
     }
 
     fun refresh() {
+        AnalyticsHelper.logEvent("refresh")
         BudgetUpdateCache.consume() // clear any stale cache
         loadData()
     }
@@ -338,7 +341,10 @@ class BudgetPilotViewModel : ViewModel() {
             result.fold(
                 onSuccess = { resp ->
                     when (resp.status) {
-                        "applied" -> loadData()
+                        "applied" -> {
+                            AnalyticsHelper.logEvent("optimization_applied")
+                            loadData()
+                        }
                         "rejected" -> _uiState.update {
                             it.copy(error = resp.reason ?: "Adjustment rejected")
                         }

@@ -33,7 +33,7 @@ Create a `.env.local` file in the root directory. See [ENV_SETUP.md](./ENV_SETUP
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-NEXT_PUBLIC_API_URL=http://34.14.136.76:8001
+NEXT_PUBLIC_API_URL=https://api.monytix.ai
 NEXT_PUBLIC_SUPABASE_REDIRECT_URL=http://localhost:3000/auth/callback
 ```
 

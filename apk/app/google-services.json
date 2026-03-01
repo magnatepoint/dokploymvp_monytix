@@ -1,0 +1,134 @@
+{
+  "project_info": {
+    "project_number": "636445644991",
+    "project_id": "monytix-79dac",
+    "storage_bucket": "monytix-79dac.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:636445644991:android:5a8486aa4c965c2ad1ce0a",
+        "android_client_info": {
+          "package_name": "com.example.monytix"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "636445644991-lnhpunqfeojh95jajur27mqrn27vgdfg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.monytix",
+            "certificate_hash": "3a9cdcce16bf36e0abefc035330cea4a7f0f1542"
+          }
+        },
+        {
+          "client_id": "636445644991-lcaa6756741obtmko4onbg9gidfb93re.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC12HFWijNthvj-pXXE2wCkg84EApinBH8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "636445644991-5prc0qp9k9nkc1fg1pogb1eggeavsmr9.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "636445644991-62pnne8elbb8inu4qsl1qdtpiu99nepu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.monytix.mpios"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:636445644991:android:e27b254c1ce967fbd1ce0a",
+        "android_client_info": {
+          "package_name": "com.monytix.mp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "636445644991-lcaa6756741obtmko4onbg9gidfb93re.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC12HFWijNthvj-pXXE2wCkg84EApinBH8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "636445644991-5prc0qp9k9nkc1fg1pogb1eggeavsmr9.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "636445644991-62pnne8elbb8inu4qsl1qdtpiu99nepu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.monytix.mpios"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:636445644991:android:98178004be82588fd1ce0a",
+        "android_client_info": {
+          "package_name": "com.monytix.mpapk"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "636445644991-54pi30m4b3eqj5fnnslu1c71psama3n5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.monytix.mpapk",
+            "certificate_hash": "968bedde90c2b22973c7900f7f2742da49493dd8"
+          }
+        },
+        {
+          "client_id": "636445644991-lcaa6756741obtmko4onbg9gidfb93re.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC12HFWijNthvj-pXXE2wCkg84EApinBH8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "636445644991-5prc0qp9k9nkc1fg1pogb1eggeavsmr9.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "636445644991-62pnne8elbb8inu4qsl1qdtpiu99nepu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.monytix.mpios"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

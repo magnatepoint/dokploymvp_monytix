@@ -1163,34 +1163,46 @@ class SpendSenseService:
         deleted_counts["custom_subcategories_anonymized"] = custom_subcat_anon_count
         deleted_counts["custom_subcategories_deleted_conflicts"] = custom_subcat_conflicts
         
-        # Delete Supabase auth account so they can re-register
+        # Delete auth account (Firebase or Supabase) so they can re-register
         auth_deleted = False
-        try:
-            from app.auth.service import SupabaseAuthService
-            from app.core.config import get_settings
-            import httpx
-            
-            settings = get_settings()
-            # Use Supabase Admin API to delete the auth user
-            url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
-            headers = {
-                "Authorization": f"Bearer {settings.supabase_service_role_key}",
-                "apikey": settings.supabase_service_role_key,
-            }
-            
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.delete(url, headers=headers)
-                if response.status_code == 200:
-                    auth_deleted = True
-                    logger.info(f"Deleted Supabase auth account for user {user_id}")
-                else:
-                    logger.warning(
-                        f"Failed to delete Supabase auth account for {user_id}: "
-                        f"{response.status_code} {response.text}"
-                    )
-        except Exception as e:
-            logger.error(f"Error deleting Supabase auth account for {user_id}: {e}")
-            # Continue even if auth deletion fails - app data is already deleted
+        settings = __import__("app.core.config", fromlist=["get_settings"]).get_settings()
+
+        # Firebase UIDs have no hyphens; Supabase uses UUIDs (with hyphens)
+        is_firebase_uid = "-" not in user_id and 1 <= len(user_id) <= 128
+
+        if is_firebase_uid and settings.firebase_project_id:
+            try:
+                import firebase_admin
+                from firebase_admin import auth as firebase_auth
+
+                if not firebase_admin._apps:
+                    firebase_admin.initialize_app()
+                firebase_auth.delete_user(user_id)
+                auth_deleted = True
+                logger.info(f"Deleted Firebase auth account for user {user_id}")
+            except Exception as e:
+                logger.error(f"Error deleting Firebase auth account for {user_id}: {e}")
+        elif settings.supabase_url and settings.supabase_service_role_key:
+            try:
+                import httpx
+
+                url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
+                headers = {
+                    "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                    "apikey": settings.supabase_service_role_key,
+                }
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.delete(url, headers=headers)
+                    if response.status_code == 200:
+                        auth_deleted = True
+                        logger.info(f"Deleted Supabase auth account for user {user_id}")
+                    else:
+                        logger.warning(
+                            f"Failed to delete Supabase auth account for {user_id}: "
+                            f"{response.status_code} {response.text}"
+                        )
+            except Exception as e:
+                logger.error(f"Error deleting Supabase auth account for {user_id}: {e}")
         
         # Log deactivation (separate from deletion log)
         from app.core.audit import persist_audit, AuditAction

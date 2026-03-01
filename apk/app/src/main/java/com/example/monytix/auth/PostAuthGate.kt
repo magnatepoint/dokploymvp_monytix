@@ -1,12 +1,14 @@
 package com.example.monytix.auth
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.example.monytix.MainContent
+import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.system.AppBlockState
 
 @Composable
@@ -16,6 +18,14 @@ fun PostAuthGate(
     val context = LocalContext.current
     var pendingMpin by remember { mutableStateOf<String?>(null) }
     var biometricDecided by remember { mutableStateOf(BiometricPreferences.hasDecided(context)) }
+
+    val mpinSet = MpinManager.isMpinSet(context)
+    LaunchedEffect(mpinSet, biometricDecided) {
+        when {
+            !mpinSet -> AnalyticsHelper.logScreenView("set_mpin")
+            !biometricDecided -> AnalyticsHelper.logScreenView("enable_biometrics")
+        }
+    }
 
     when {
         !MpinManager.isMpinSet(context) -> {
@@ -29,6 +39,7 @@ fun PostAuthGate(
                     isConfirmStep = true,
                     onMpinSet = { pin ->
                         if (pin == pendingMpin) {
+                            AnalyticsHelper.logEvent("mpin_set")
                             MpinManager.setMpin(context, pin)
                             pendingMpin = null
                         } else {

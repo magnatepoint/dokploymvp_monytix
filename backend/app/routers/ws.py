@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException, status
 
 from app.auth.dependencies import get_current_user_ws
-from app.core.security import SupabaseJWTError, decode_supabase_jwt
+from app.core.security import AuthTokenError, decode_auth_token
 from app.services.realtime_ws import register_ws, unregister_ws
 
 router = APIRouter()
@@ -36,10 +36,10 @@ async def _authenticate_websocket(websocket: WebSocket):
         )
     
     try:
-        user = decode_supabase_jwt(token)
+        user = decode_auth_token(token)
         logger.info(f"WebSocket authenticated for user: {user.user_id}")
         return user
-    except SupabaseJWTError as exc:
+    except AuthTokenError as exc:
         logger.error(f"WebSocket authentication failed: {exc}", exc_info=True)
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=str(exc))
         raise WebSocketException(

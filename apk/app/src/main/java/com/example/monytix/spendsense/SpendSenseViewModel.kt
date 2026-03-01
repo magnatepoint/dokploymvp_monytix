@@ -10,9 +10,9 @@ import com.example.monytix.data.CategorySpendKpi
 import com.example.monytix.data.InsightsResponse
 import com.example.monytix.data.KpiResponse
 import com.example.monytix.data.SubcategoryResponse
-import com.example.monytix.data.Supabase
 import com.example.monytix.data.TransactionCreateRequest
-import io.github.jan.supabase.auth.auth
+import com.example.monytix.analytics.AnalyticsHelper
+import com.example.monytix.auth.FirebaseAuthManager
 import com.example.monytix.data.TransactionCreateResponse
 import com.example.monytix.data.TransactionRecordResponse
 import com.example.monytix.budgetpilot.BudgetUpdateCache
@@ -84,8 +84,8 @@ class SpendSenseViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(SpendSenseUiState())
     val uiState: StateFlow<SpendSenseUiState> = _uiState.asStateFlow()
 
-    private fun getAccessToken(): String? =
-        Supabase.client.auth.currentSessionOrNull()?.accessToken
+    private suspend fun getAccessToken(): String? =
+        FirebaseAuthManager.getIdToken()
 
     init {
         loadSession()
@@ -322,6 +322,12 @@ class SpendSenseViewModel : ViewModel() {
 
     fun setTransactionFilters(filters: TransactionFilters) {
         _uiState.update { it.copy(transactionFilters = filters) }
+        AnalyticsHelper.logEvent("filter_applied", buildMap {
+            filters.categoryCode?.let { put("category", it) }
+            filters.channel?.let { put("channel", it) }
+            filters.direction?.let { put("direction", it) }
+            filters.bankCode?.let { put("bank_code", it) }
+        })
         loadTransactions(1, append = false)
         loadDebitCreditSummary()
     }
@@ -430,6 +436,7 @@ class SpendSenseViewModel : ViewModel() {
             }
             result.fold(
                 onSuccess = { resp ->
+                    AnalyticsHelper.logEvent("manual_transaction_added", mapOf("direction" to direction))
                     GoalUpdateCache.setFromTransactionCreate(resp.updated_goals)
                     resp.budget_state?.let { BudgetUpdateCache.setFromTransactionCreate(it) }
                     val toast = resp.updated_goals.firstOrNull()?.let { g ->
@@ -472,7 +479,10 @@ class SpendSenseViewModel : ViewModel() {
                     token, txnId, categoryCode, subcategoryCode, merchantName, channel
                 )
             }
-            result.getOrNull()?.let { loadTransactions(1, append = false) }
+            result.getOrNull()?.let {
+                AnalyticsHelper.logEvent("transaction_edited")
+                loadTransactions(1, append = false)
+            }
         }
     }
 
@@ -480,7 +490,10 @@ class SpendSenseViewModel : ViewModel() {
         viewModelScope.launch {
             val token = getAccessToken() ?: return@launch
             val result = withContext(Dispatchers.IO) { BackendApi.deleteTransaction(token, txnId) }
-            result.getOrNull()?.let { loadTransactions(1, append = false) }
+            result.getOrNull()?.let {
+                AnalyticsHelper.logEvent("transaction_deleted")
+                loadTransactions(1, append = false)
+            }
         }
     }
 
@@ -493,6 +506,7 @@ class SpendSenseViewModel : ViewModel() {
     }
 
     fun refresh() {
+        AnalyticsHelper.logEvent("refresh")
         loadKpis(_uiState.value.selectedMonth)
         loadTransactions(1, append = false)
         loadInsights()

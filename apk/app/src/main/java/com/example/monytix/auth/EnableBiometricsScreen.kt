@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.monytix.R
+import com.example.monytix.analytics.AnalyticsHelper
 
 @Composable
 fun EnableBiometricsScreen(
@@ -53,7 +54,10 @@ fun EnableBiometricsScreen(
         )
         Spacer(modifier = Modifier.height(32.dp))
         Button(
-            onClick = onEnable,
+            onClick = {
+                AnalyticsHelper.logEvent("biometrics_enabled")
+                onEnable()
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -67,7 +71,10 @@ fun EnableBiometricsScreen(
         }
         Spacer(modifier = Modifier.height(12.dp))
         OutlinedButton(
-            onClick = onSkip,
+            onClick = {
+                AnalyticsHelper.logEvent("biometrics_skipped")
+                onSkip()
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),

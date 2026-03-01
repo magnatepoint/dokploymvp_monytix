@@ -72,8 +72,8 @@ fun PrivacyPolicyScreen(
                 .height(52.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color.White,
-                contentColor = Color.Black
+                containerColor = Color(0xFF14B8A6),
+                contentColor = Color.White
             )
         ) {
             Text(stringResource(R.string.privacy_continue), fontWeight = FontWeight.SemiBold)

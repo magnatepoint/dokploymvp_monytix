@@ -10,10 +10,15 @@ from .service import SupabaseAuthService
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=LoginResponse, summary="Supabase password login")
+@router.post("/login", response_model=LoginResponse, summary="Supabase password login (legacy)")
 async def login(payload: LoginRequest) -> LoginResponse:
-    """Authenticate via Supabase Auth and return the session tokens."""
-
+    """Authenticate via Supabase Auth and return the session tokens.
+    Legacy endpoint for Supabase users. Firebase clients use ID tokens directly."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=501, detail="Supabase login is disabled. Use Firebase Auth.")
     service = SupabaseAuthService()
     return await service.sign_in_with_password(payload)
 

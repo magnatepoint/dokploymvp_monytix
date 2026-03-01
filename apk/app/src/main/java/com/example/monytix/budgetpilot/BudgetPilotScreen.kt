@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,6 +34,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.animation.core.animateFloatAsState
@@ -51,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.monytix.AppDestinations
+import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.data.BudgetRecommendation
 import com.example.monytix.data.BudgetStateResponse
 import com.example.monytix.data.CommittedBudget
@@ -77,9 +81,12 @@ fun BudgetPilotScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val colorScheme = MaterialTheme.colorScheme
+
+    LaunchedEffect(Unit) { AnalyticsHelper.logScreenView("budget_pilot") }
     var showAddBudget by remember { mutableStateOf(false) }
     var showPlanPreview by remember { mutableStateOf<BudgetRecommendation?>(null) }
     var dismissedSuggestion by remember { mutableStateOf(false) }
+    var monthDropdownExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         BudgetUpdateCache.consume()?.let { viewModel.refresh() }
@@ -100,12 +107,37 @@ fun BudgetPilotScreen(
                                 fontSize = 22.sp
                             )
                         )
-                        Text(
-                            formatMonthLabel(uiState.selectedMonth),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 12.sp,
-                            color = colorScheme.onBackground.copy(alpha = 0.7f)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { monthDropdownExpanded = true }
+                        ) {
+                            Text(
+                                formatMonthLabel(uiState.selectedMonth),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 12.sp,
+                                color = colorScheme.onBackground.copy(alpha = 0.7f)
+                            )
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = "Select month",
+                                modifier = Modifier.size(18.dp),
+                                tint = colorScheme.onBackground.copy(alpha = 0.7f)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = monthDropdownExpanded,
+                            onDismissRequest = { monthDropdownExpanded = false }
+                        ) {
+                            budgetMonthOptions().forEach { monthValue ->
+                                DropdownMenuItem(
+                                    text = { Text(formatMonthLabel(monthValue)) },
+                                    onClick = {
+                                        viewModel.setMonth(monthValue)
+                                        monthDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
                     }
                 },
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
@@ -158,6 +190,7 @@ fun BudgetPilotScreen(
             sampleIncome = 50_000.0,
             onDismiss = { showPlanPreview = null },
             onSelect = {
+                AnalyticsHelper.logEvent("plan_selected", mapOf("plan_code" to plan.plan_code))
                 viewModel.commitBudget(plan.plan_code)
                 showPlanPreview = null
             },
@@ -171,6 +204,7 @@ fun BudgetPilotScreen(
             isCommitting = uiState.isCommitting,
             onDismiss = { showAddBudget = false },
             onCommit = { planCode ->
+                AnalyticsHelper.logEvent("plan_selected", mapOf("plan_code" to planCode))
                 Log.d("BudgetPilot", "AddBudgetDialog onCommit: planCode=$planCode")
                 viewModel.commitBudget(planCode)
                 showAddBudget = false
@@ -184,6 +218,15 @@ private fun hasRealData(variance: BudgetVariance?, budgetState: BudgetStateRespo
     val spend = variance?.let { it.needs_amt + it.wants_amt }
         ?: budgetState?.actual?.let { it.needs_amt + it.wants_amt + it.savings_amt } ?: 0.0
     return income >= 100 || spend >= 100
+}
+
+/** Returns YYYY-MM for the last 24 months (newest first) for the month selector. */
+private fun budgetMonthOptions(): List<String> {
+    val now = java.time.LocalDate.now()
+    return (0 until 24).map { i ->
+        val d = now.minusMonths(i.toLong())
+        d.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"))
+    }
 }
 
 private fun formatMonthLabel(month: String): String {
@@ -235,7 +278,7 @@ private fun ZeroStateCard(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Add transactions in SpendSense to start.",
+                    "BudgetPilot uses your SpendSense data automatically—no extra permission. No budget data for this month yet. Open SpendSense to check or add transactions, or set a budget plan from the menu.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                 )
@@ -244,7 +287,7 @@ private fun ZeroStateCard(
                     onClick = onAddTransaction,
                     colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary, contentColor = MaterialTheme.colorScheme.onPrimary)
                 ) {
-                    Text("Add Transaction in SpendSense")
+                    Text("Open SpendSense")
                 }
             }
         }

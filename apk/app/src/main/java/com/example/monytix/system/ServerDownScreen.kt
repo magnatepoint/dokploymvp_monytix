@@ -62,6 +62,14 @@ fun ServerDownScreen(
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.server_down_mobile_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.6f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
         Spacer(modifier = Modifier.height(32.dp))
         androidx.compose.material3.Button(
             onClick = onRetry,

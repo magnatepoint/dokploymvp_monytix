@@ -104,6 +104,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.data.AccountItemResponse
 import com.example.monytix.data.CategoryResponse
 import com.example.monytix.data.CategorySpendKpi
@@ -136,6 +137,8 @@ fun SpendSenseScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(SpendSenseTab.CATEGORIES) }
+
+    LaunchedEffect(Unit) { AnalyticsHelper.logScreenView("spendsense") }
     var showManualAddByRequest by remember { mutableStateOf(false) }
     val pendingUpload by PendingUploadHolder.state
     val pendingManualAdd by PendingManualAddHolder.state
@@ -172,6 +175,20 @@ fun SpendSenseScreen(
                     titleContentColor = colorScheme.onBackground
                 ),
                 actions = {
+                    IconButton(onClick = {
+                        AnalyticsHelper.logEvent("upload_statement")
+                        onLaunchFilePicker()
+                        if (selectedTab != SpendSenseTab.TRANSACTIONS) selectedTab = SpendSenseTab.TRANSACTIONS
+                    }) {
+                        Icon(Icons.Default.Upload, contentDescription = "Upload statement", tint = colorScheme.onBackground)
+                    }
+                    IconButton(onClick = {
+                        AnalyticsHelper.logEvent("add_transaction")
+                        showManualAddByRequest = true
+                        if (selectedTab != SpendSenseTab.TRANSACTIONS) selectedTab = SpendSenseTab.TRANSACTIONS
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add transaction", tint = colorScheme.onBackground)
+                    }
                     IconButton(onClick = { viewModel.refresh() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = colorScheme.onBackground)
                     }
@@ -186,7 +203,10 @@ fun SpendSenseScreen(
                 .padding(innerPadding)
         ) {
             WelcomeBanner(username = uiState.userEmail ?: "User")
-            TabBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+            TabBar(selectedTab = selectedTab, onTabSelected = {
+                AnalyticsHelper.logEvent("tab_selected", mapOf("tab" to it.name.lowercase()))
+                selectedTab = it
+            })
             when (selectedTab) {
                 SpendSenseTab.CATEGORIES -> CategoriesTab(
                     viewModel = viewModel,
@@ -340,27 +360,6 @@ private fun CategoriesTab(
                 )
             } else {
                 categoriesTabContent(viewModel, uiState, kpis)
-            }
-        }
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 80.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            FloatingActionButton(
-                onClick = { onLaunchFilePicker(); onSwitchToTransactions() },
-                containerColor = SurfaceElevated,
-                contentColor = MaterialTheme.colorScheme.onSurface
-            ) {
-                Icon(Icons.Default.Upload, contentDescription = "Upload PDF")
-            }
-            FloatingActionButton(
-                onClick = onShowManualAdd,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Transaction")
             }
         }
     }
@@ -1228,32 +1227,6 @@ private fun TransactionsTab(
                 }
             }
         }
-    }
-
-        // Floating action buttons (Upload PDF + Add Transaction) - overlay at bottom-right
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 80.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            FloatingActionButton(
-                onClick = {
-                    Log.d("MonytixUpload", "Upload FAB clicked, launching file picker")
-                    onLaunchFilePicker()
-                },
-                containerColor = SurfaceElevated,
-                contentColor = MaterialTheme.colorScheme.onSurface
-            ) {
-                Icon(Icons.Default.Upload, contentDescription = "Upload PDF")
-            }
-            FloatingActionButton(
-                onClick = { showManualAdd = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Transaction")
-            }
         }
     }
 

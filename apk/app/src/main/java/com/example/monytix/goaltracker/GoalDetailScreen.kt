@@ -100,12 +100,16 @@ fun GoalDetailScreen(
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(formatCurrency(goal.current_savings), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                        Text("saved", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        Text(formatCurrency(remaining), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ChartOrange)
-                        Text("remaining", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(formatCurrency(goal.current_savings), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Text("saved", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        }
+                        Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(1f)) {
+                            Text(formatCurrency(remaining), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ChartOrange)
+                            Text("remaining", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        }
                     }
                     Spacer(Modifier.height(12.dp))
                     progress?.pace_description?.let { pace ->

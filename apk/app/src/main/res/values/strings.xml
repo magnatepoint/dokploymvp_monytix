@@ -1,23 +1,45 @@
 <resources>
     <string name="app_name">Monytix</string>
+    <!-- Web client ID for Google Sign-In (Credential Manager). From Firebase Console → Project Settings → OAuth. -->
+    <string name="default_web_client_id">636445644991-lcaa6756741obtmko4onbg9gidfb93re.apps.googleusercontent.com</string>
 
     <!-- Splash -->
     <string name="splash_tagline">Your money, one place</string>
+    <string name="splash_securing">SECURING CONNECTION...</string>
+    <string name="splash_monytix">MONYTIX</string>
+    <string name="splash_ai_intelligence">AI INTELLIGENCE</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_slide1_title">Track all your money in one place</string>
+    <string name="onboarding_slide1_title">Smart Wealth for Bharat</string>
+    <string name="onboarding_slide1_subtitle">AI-powered financial planning built specifically for the Indian market.</string>
     <string name="onboarding_slide2_title">AI-powered insights &amp; future predictions</string>
-    <string name="onboarding_slide3_title">Bank-grade encryption &amp; privacy-first design</string>
-    <string name="onboarding_get_started">Get Started</string>
+    <string name="onboarding_slide3_title">Bank-grade Encryption &amp; Privacy-first design</string>
+    <string name="onboarding_slide3_body">Your financial data is protected by the same security standards used by world-leading banks.</string>
+    <string name="onboarding_continue_mobile">Continue with Mobile</string>
+    <string name="onboarding_existing_user">Existing user? Login</string>
+    <string name="onboarding_get_started">GET STARTED</string>
     <string name="onboarding_login">Login</string>
+    <string name="onboarding_encrypted">ENCRYPTED</string>
 
     <!-- Permission explainer -->
     <string name="permission_notifications_title">Notifications</string>
     <string name="permission_notifications_desc">We need notifications to remind you about goals and spending alerts. We never spam.</string>
+    <string name="permission_security_experience">Security &amp; Experience</string>
+    <string name="permission_subtitle">To provide AI-powered insights and secure your account, Monytix needs the following permissions.</string>
+    <string name="permission_transaction_title">Transaction Tracking</string>
+    <string name="permission_transaction_desc">Monytix AI reads transaction SMS to automatically categorize your spending and update your budget in real-time.</string>
+    <string name="permission_split_title">Split Bills</string>
+    <string name="permission_split_desc">Easily find friends to split dinners or shared expenses without typing phone numbers manually.</string>
+    <string name="permission_enhanced_title">Enhanced Security</string>
+    <string name="permission_enhanced_desc">We use your location to prevent fraudulent transactions and secure your account.</string>
+    <string name="permission_allow">Allow Permissions</string>
+    <string name="permission_later">I\'ll do this later</string>
 
     <!-- Update required -->
-    <string name="update_required_title">Update Required</string>
-    <string name="update_required_desc">A new version of Monytix is available. Please update to continue.</string>
+    <string name="update_required_title">Time for an Upgrade</string>
+    <string name="update_required_desc">We\'ve introduced some powerful new AI features to help you manage your finances even better. Update now to continue using Monytix safely and efficiently.</string>
+    <string name="update_now">Update Now</string>
+    <string name="not_now">Not Now</string>
 
     <!-- Auth / Login -->
     <string name="auth_phone_otp">Phone + OTP</string>
@@ -41,12 +63,29 @@
     <string name="mpin_confirm_subtitle">Re-enter your 6-digit PIN</string>
 
     <!-- Legal &amp; Compliance -->
-    <string name="terms_title">Terms &amp; Conditions</string>
+    <string name="terms_title">Terms of Service</string>
+    <string name="terms_last_updated">Last Updated: June 12, 2024</string>
+    <string name="terms_section1_title">1. Acceptance of Terms</string>
+    <string name="terms_section1_body">By accessing or using the Monytix AI financial services platform, you agree to be bound by these Terms of Service. If you do not agree to all of these terms, do not use our services.</string>
+    <string name="terms_section2_title">2. AI Financial Insights</string>
+    <string name="terms_section2_body">Monytix utilizes advanced artificial intelligence to provide financial suggestions. These insights are for informational purposes only and do not constitute professional financial advice. Always consult with a licensed professional before making significant investment decisions. For more information on how we handle your financial data please refer to our Data.</string>
+    <string name="terms_checkbox">I have read and agree to the Terms of Service and Privacy Policy.</string>
+    <string name="terms_agree">I Agree</string>
     <string name="terms_content">By using Monytix, you agree to our Terms of Service. These govern your use of our financial tracking and AI-powered insights. Please read them carefully before proceeding.</string>
-    <string name="terms_checkbox">I accept the Terms &amp; Conditions</string>
     <string name="terms_continue">Continue</string>
 
     <string name="privacy_title">Privacy Policy</string>
+    <string name="privacy_data_consent_title">Privacy &amp; Data Consent</string>
+    <string name="privacy_your_privacy_matters">Your Privacy Matters.</string>
+    <string name="privacy_subtitle">At Monytix AI, we value your trust. Learn how we use your data to power your financial future.</string>
+    <string name="privacy_card_ai_title">AI Personalization</string>
+    <string name="privacy_card_ai_desc">We use your transaction history to provide tailored spending insights and AI-driven wealth advice.</string>
+    <string name="privacy_card_security_title">Advanced Security</string>
+    <string name="privacy_card_security_desc">Your data is encrypted with bank-grade standards and used to detect fraudulent activities instantly.</string>
+    <string name="privacy_card_compliance_title">Regulatory Compliance</string>
+    <string name="privacy_card_compliance_desc">We adhere to global financial regulations ensuring your data is handled with legal transparency.</string>
+    <string name="privacy_personalized_marketing">Personalized Marketing</string>
+    <string name="privacy_proceed">Proceed</string>
     <string name="privacy_no_messages">We do not read your personal messages.</string>
     <string name="privacy_no_sell">We do not sell your financial data.</string>
     <string name="privacy_encryption">Your data is encrypted at rest and in transit.</string>
@@ -123,10 +162,13 @@
     <string name="dash_no_data_hint">Go to Data tab to upload a statement or add transactions</string>
 
     <!-- Security &amp; Risk -->
-    <string name="device_verification_title">New device detected</string>
-    <string name="device_verification_desc">We noticed you\'re signing in from a new device. If this is you, continue. If not, contact support immediately.</string>
-    <string name="device_verification_continue">This is my device</string>
-    <string name="device_verification_support">Contact support</string>
+    <string name="device_verification_title">Device Verification</string>
+    <string name="device_verification_desc">Verifying your device for secure access to Monytix AI</string>
+    <string name="device_verification_continue">Verify Now</string>
+    <string name="device_verification_support">Trouble verifying?</string>
+    <string name="device_encryption">END-TO-END ENCRYPTION</string>
+    <string name="device_new_title">New device detected</string>
+    <string name="device_new_desc">We noticed you\'re signing in from a new device. If this is you, continue. If not, contact support immediately.</string>
 
     <string name="session_expired_title">Session expired</string>
     <string name="session_expired_desc">For your security, please sign in again.</string>
@@ -147,6 +189,7 @@
 
     <string name="server_down_title">Service temporarily unavailable</string>
     <string name="server_down_desc">We\'re experiencing technical difficulties. Please try again later.</string>
+    <string name="server_down_mobile_hint">On mobile data? Try: Settings → Network → Private DNS → set to \'dns.google\' (bypasses carrier DNS issues).</string>
     <string name="server_down_retry">Retry</string>
     <string name="server_down_continue">Continue anyway</string>
 

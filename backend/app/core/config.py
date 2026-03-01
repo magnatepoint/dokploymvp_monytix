@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated
 
 from dotenv import load_dotenv
-from pydantic import AnyHttpUrl, BeforeValidator, Field, PostgresDsn, RedisDsn, ValidationError
+from pydantic import AnyHttpUrl, BeforeValidator, Field, PostgresDsn, RedisDsn, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,10 +28,11 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", alias="ENVIRONMENT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     workers: int = Field(default=2, alias="WORKERS")
-    supabase_url: AnyHttpUrl = Field(alias="SUPABASE_URL")
-    supabase_anon_key: str = Field(alias="SUPABASE_ANON_KEY")
-    supabase_service_role_key: str = Field(alias="SUPABASE_SERVICE_ROLE_KEY")
-    supabase_jwt_secret: str = Field(alias="SUPABASE_JWT_SECRET")
+    supabase_url: AnyHttpUrl | None = Field(default=None, alias="SUPABASE_URL")
+    supabase_anon_key: str | None = Field(default=None, alias="SUPABASE_ANON_KEY")
+    supabase_service_role_key: str | None = Field(default=None, alias="SUPABASE_SERVICE_ROLE_KEY")
+    supabase_jwt_secret: str | None = Field(default=None, alias="SUPABASE_JWT_SECRET")
+    firebase_project_id: str | None = Field(default=None, alias="FIREBASE_PROJECT_ID")
     frontend_origin: Annotated[AnyHttpUrl, BeforeValidator(_ensure_url_scheme)] = Field(
         default="http://localhost:5173", alias="FRONTEND_ORIGIN"
     )
@@ -56,6 +57,21 @@ class Settings(BaseSettings):
     
     # Base directory for models and data
     base_dir: Path = Field(default=BACKEND_DIR, alias="BASE_DIR")
+
+    @model_validator(mode="after")
+    def ensure_auth_configured(self) -> "Settings":
+        if not self.auth_is_configured:
+            raise ValueError(
+                "At least one auth provider must be configured. "
+                "Set FIREBASE_PROJECT_ID (and GOOGLE_APPLICATION_CREDENTIALS) for Firebase, "
+                "or SUPABASE_JWT_SECRET for Supabase."
+            )
+        return self
+
+    @property
+    def auth_is_configured(self) -> bool:
+        """True if at least one auth provider (Firebase or Supabase) is configured."""
+        return bool(self.firebase_project_id or self.supabase_jwt_secret)
 
     @property
     def gmail_is_configured(self) -> bool:

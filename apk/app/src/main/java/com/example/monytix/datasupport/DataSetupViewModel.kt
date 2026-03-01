@@ -5,8 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.monytix.data.BackendApi
 import com.example.monytix.data.KpiResponse
-import com.example.monytix.data.Supabase
-import io.github.jan.supabase.auth.auth
+import com.example.monytix.auth.FirebaseAuthManager
 import com.example.monytix.data.TransactionCreateRequest
 import com.example.monytix.data.UploadBatchResponse
 import kotlinx.coroutines.delay
@@ -46,8 +45,8 @@ class DataSetupViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(DataSetupUiState())
     val uiState: StateFlow<DataSetupUiState> = _uiState.asStateFlow()
 
-    private fun getAccessToken(): String? =
-        Supabase.client.auth.currentSessionOrNull()?.accessToken
+    private suspend fun getAccessToken(): String? =
+        FirebaseAuthManager.getIdToken()
 
     fun showUploadStatement() {
         _uiState.update {
@@ -67,17 +66,17 @@ class DataSetupViewModel : ViewModel() {
 
     fun uploadFile(fileBytes: ByteArray, filename: String, pdfPassword: String? = null) {
         Log.d("MonytixUpload", "DataSetupViewModel.uploadFile: filename=$filename bytes=${fileBytes.size}")
-        val token = getAccessToken()
-        if (token == null) {
-            _uiState.update { it.copy(error = "Not signed in") }
-            return
-        }
         val ext = filename.substringAfterLast('.', "").lowercase()
         if (ext !in listOf("pdf", "csv", "xls", "xlsx")) {
             _uiState.update { it.copy(error = "Unsupported format. Use PDF, CSV, or Excel.") }
             return
         }
         viewModelScope.launch {
+            val token = getAccessToken()
+            if (token == null) {
+                _uiState.update { it.copy(error = "Not signed in") }
+                return@launch
+            }
             _uiState.update { it.copy(isLoading = true, error = null, pendingRetryFile = Pair(fileBytes, filename)) }
             val result = BackendApi.uploadStatement(token, fileBytes, filename, pdfPassword)
             result.fold(
@@ -207,12 +206,12 @@ class DataSetupViewModel : ViewModel() {
         direction: String,
         categoryCode: String?
     ) {
-        val token = getAccessToken()
-        if (token == null) {
-            _uiState.update { it.copy(error = "Not signed in") }
-            return
-        }
         viewModelScope.launch {
+            val token = getAccessToken()
+            if (token == null) {
+                _uiState.update { it.copy(error = "Not signed in") }
+                return@launch
+            }
             _uiState.update { it.copy(isLoading = true, error = null) }
             val result = BackendApi.createTransaction(
                 token,

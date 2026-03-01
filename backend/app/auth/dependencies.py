@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, WebSocket, WebSocketException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core.security import SupabaseJWTError, decode_supabase_jwt
+from app.core.security import AuthTokenError, decode_auth_token
 from .models import AuthenticatedUser
 
 http_bearer = HTTPBearer(auto_error=False)
@@ -10,7 +10,7 @@ http_bearer = HTTPBearer(auto_error=False)
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(http_bearer),
 ) -> AuthenticatedUser:
-    """Extract and validate the Supabase JWT from the Authorization header."""
+    """Extract and validate the auth token (Firebase or Supabase) from the Authorization header."""
 
     if credentials is None:
         raise HTTPException(
@@ -21,8 +21,8 @@ def get_current_user(
     token = credentials.credentials
 
     try:
-        return decode_supabase_jwt(token)
-    except SupabaseJWTError as exc:
+        return decode_auth_token(token)
+    except AuthTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
@@ -37,8 +37,8 @@ async def get_current_user_ws(websocket: WebSocket) -> AuthenticatedUser:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token")
 
     try:
-        return decode_supabase_jwt(token)
-    except SupabaseJWTError as exc:
+        return decode_auth_token(token)
+    except AuthTokenError as exc:
         await websocket.close(code=4401)
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION,

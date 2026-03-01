@@ -44,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
+import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.BuildConfig
 import com.example.monytix.R
 import com.example.monytix.ui.theme.Error
@@ -57,6 +59,8 @@ fun ProfileScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showLogoutConfirm by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { AnalyticsHelper.logScreenView("profile") }
     var showDeleteAccount by remember { mutableStateOf(false) }
     var showDeleteDataConfirm by remember { mutableStateOf(false) }
     val colorScheme = MaterialTheme.colorScheme
@@ -100,13 +104,19 @@ fun ProfileScreen(
                         icon = Icons.Default.Notifications,
                         title = "Notifications",
                         subtitle = "Manage notification preferences",
-                        onClick = { /* Coming soon */ }
+                        onClick = {
+                            AnalyticsHelper.logEvent("notification_toggled")
+                            /* Coming soon */
+                        }
                     )
                     ProfilePrefRow(
                         icon = Icons.Default.Settings,
                         title = "Currency",
                         subtitle = "INR (Indian Rupee)",
-                        onClick = { /* Coming soon */ }
+                        onClick = {
+                            AnalyticsHelper.logEvent("currency_changed")
+                            /* Coming soon */
+                        }
                     )
                     ProfilePrefRow(
                         icon = Icons.Default.Settings,
@@ -166,7 +176,10 @@ fun ProfileScreen(
                 ProfileMenuItem(
                     icon = Icons.Default.Download,
                     title = stringResource(R.string.profile_data_export),
-                    onClick = { viewModel.exportData() },
+                    onClick = {
+                        AnalyticsHelper.logEvent("export_data")
+                        viewModel.exportData()
+                    },
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -174,7 +187,10 @@ fun ProfileScreen(
                 ProfileMenuItem(
                     icon = Icons.Default.PersonOff,
                     title = stringResource(R.string.profile_deactivate),
-                    onClick = { viewModel.deactivateAccount() },
+                    onClick = {
+                        AnalyticsHelper.logEvent("deactivate_account")
+                        viewModel.deactivateAccount()
+                    },
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -222,6 +238,7 @@ fun ProfileScreen(
     if (showLogoutConfirm) {
         LogoutConfirmDialog(
             onConfirm = {
+                AnalyticsHelper.logEvent("logout")
                 viewModel.logout()
                 showLogoutConfirm = false
             },
@@ -232,6 +249,7 @@ fun ProfileScreen(
     if (showDeleteAccount) {
         DeleteAccountDialog(
             onConfirm = {
+                AnalyticsHelper.logEvent("delete_account")
                 viewModel.deleteAccount()
                 showDeleteAccount = false
             },
@@ -242,6 +260,7 @@ fun ProfileScreen(
     if (showDeleteDataConfirm) {
         DeleteDataConfirmDialog(
             onConfirm = {
+                AnalyticsHelper.logEvent("delete_all_data")
                 viewModel.deleteAllData()
                 showDeleteDataConfirm = false
             },

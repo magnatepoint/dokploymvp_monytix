@@ -6,8 +6,8 @@ import com.example.monytix.data.BackendApi
 import com.example.monytix.data.GoalProgressItem
 import com.example.monytix.data.GoalResponse
 import com.example.monytix.goaltracker.GoalUpdateCache
-import com.example.monytix.data.Supabase
-import io.github.jan.supabase.auth.auth
+import com.example.monytix.analytics.AnalyticsHelper
+import com.example.monytix.auth.FirebaseAuthManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,8 +39,8 @@ class GoalTrackerViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(GoalTrackerUiState())
     val uiState: StateFlow<GoalTrackerUiState> = _uiState.asStateFlow()
 
-    private fun getAccessToken(): String? =
-        Supabase.client.auth.currentSessionOrNull()?.accessToken
+    private suspend fun getAccessToken(): String? =
+        FirebaseAuthManager.getIdToken()
 
     init {
         loadSession()
@@ -126,6 +126,11 @@ class GoalTrackerViewModel : ViewModel() {
             }
             result.fold(
                 onSuccess = {
+                    AnalyticsHelper.logEvent("goal_created", mapOf(
+                        "goal_category" to goalCategory,
+                        "goal_type" to (goalType ?: "default"),
+                        "has_target_date" to (targetDate != null).toString()
+                    ))
                     _uiState.update { it.copy(isLoading = false, createGoalResult = CreateGoalResult.Success) }
                     loadData()
                 },
@@ -158,6 +163,7 @@ class GoalTrackerViewModel : ViewModel() {
             }
             result.fold(
                 onSuccess = {
+                    AnalyticsHelper.logEvent("goal_edited")
                     _uiState.update { it.copy(isLoading = false) }
                     loadData()
                 },
@@ -182,6 +188,7 @@ class GoalTrackerViewModel : ViewModel() {
             }
             result.fold(
                 onSuccess = {
+                    AnalyticsHelper.logEvent("goal_deleted")
                     _uiState.update { it.copy(isLoading = false) }
                     loadData()
                 },
@@ -198,6 +205,7 @@ class GoalTrackerViewModel : ViewModel() {
     }
 
     fun refresh() {
+        AnalyticsHelper.logEvent("refresh")
         loadData()
     }
 

@@ -57,7 +57,7 @@ import com.example.monytix.spendsense.SpendSenseScreen
 import com.example.monytix.preauth.PreAuthScreen
 import com.example.monytix.preauth.PreAuthViewModel
 import com.example.monytix.preauth.PreAuthViewModelFactory
-import com.example.monytix.data.Supabase
+import com.example.monytix.auth.FirebaseAuthManager
 import com.example.monytix.budgetpilot.BudgetPilotScreen
 import com.example.monytix.goaltracker.GoalTrackerScreen
 import com.example.monytix.moneymoments.MoneyMomentsScreen
@@ -66,9 +66,6 @@ import com.example.monytix.profile.ProfileScreen
 import com.example.monytix.spendsense.PendingManualAddHolder
 import com.example.monytix.spendsense.PendingUploadHolder
 import com.example.monytix.ui.theme.MonytixTheme
-import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.auth.handleDeeplinks
-import io.github.jan.supabase.auth.status.SessionStatus
 
 class MainActivity : ComponentActivity() {
     private val filePickerLauncher = registerForActivityResult(
@@ -112,7 +109,6 @@ class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
         var keepSplash = true
         splashScreen.setKeepOnScreenCondition { keepSplash }
-        Supabase.client.handleDeeplinks(intent)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
@@ -124,7 +120,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
-        Supabase.client.handleDeeplinks(intent)
     }
 }
 
@@ -137,16 +132,14 @@ fun MonytixApp(
     authViewModel: AuthViewModel = viewModel(),
     onSessionReady: () -> Unit = {}
 ) {
-    val sessionStatus by Supabase.client.auth.sessionStatus.collectAsState(initial = SessionStatus.Initializing)
+    val isSignedIn by FirebaseAuthManager.isSignedIn.collectAsState(initial = FirebaseAuthManager.currentUser != null)
 
-    LaunchedEffect(sessionStatus) {
-        if (sessionStatus !is SessionStatus.Initializing) {
-            delay(150) // Allow first frame to compose before dismissing splash
-            onSessionReady()
-        }
+    LaunchedEffect(isSignedIn) {
+        delay(150) // Allow first frame to compose before dismissing splash
+        onSessionReady()
     }
 
-    if (sessionStatus is SessionStatus.Authenticated) {
+    if (isSignedIn) {
         PostAuthGate()
     } else {
         PreAuthScreen(
@@ -173,11 +166,19 @@ internal fun MainContent() {
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             AppDestinations.entries.forEach {
+                val fullName = when (it) {
+                    AppDestinations.HOME -> "MolyConsole"
+                    AppDestinations.DATA -> "SpendSense"
+                    AppDestinations.GOALS -> "GoalTracker"
+                    AppDestinations.BUDGET -> "BudgetPilot"
+                    AppDestinations.FAVORITES -> "MoneyMoments"
+                    AppDestinations.PROFILE -> "Profile"
+                }
                 item(
                     icon = {
                         Icon(
                             it.icon,
-                            contentDescription = it.label
+                            contentDescription = fullName
                         )
                     },
                     label = { Text(it.label) },
@@ -234,11 +235,11 @@ enum class AppDestinations(
     val label: String,
     val icon: ImageVector,
 ) {
-    HOME("MolyConsole", Icons.Default.Home),
-    DATA("SpendSense", Icons.Default.AttachMoney),
-    GOALS("GoalTracker", Icons.Default.Flag),
-    BUDGET("BudgetPilot", Icons.Default.PieChart),
-    FAVORITES("MoneyMoments", Icons.Default.Favorite),
+    HOME("Home", Icons.Default.Home),
+    DATA("Spend", Icons.Default.AttachMoney),
+    GOALS("Goals", Icons.Default.Flag),
+    BUDGET("Budget", Icons.Default.PieChart),
+    FAVORITES("Moments", Icons.Default.Favorite),
     PROFILE("Profile", Icons.Default.AccountBox),
 }
 

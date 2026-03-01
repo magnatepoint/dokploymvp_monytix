@@ -3,10 +3,12 @@ package com.example.monytix.auth
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.security.MessageDigest
 import java.security.SecureRandom
+import javax.crypto.AEADBadTagException
 
 object MpinManager {
 
@@ -18,16 +20,45 @@ object MpinManager {
     private const val HASH_ALGORITHM = "SHA-256"
 
     private fun getPrefs(context: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        return getPrefsOrClearAndRetry(context, clearOnFailure = false)
+    }
+
+    /**
+     * Create EncryptedSharedPreferences. If decryption fails (e.g. AEADBadTagException after
+     * app reinstall or Keystore change), clear the prefs file and retry once so the app
+     * doesn't crash and the user can set MPIN again.
+     */
+    private fun getPrefsOrClearAndRetry(context: Context, clearOnFailure: Boolean): SharedPreferences {
+        if (clearOnFailure) {
+            try {
+                context.deleteSharedPreferences(PREFS_NAME)
+            } catch (e: Exception) {
+                Log.w("MpinManager", "Could not delete corrupted prefs", e)
+            }
+        }
+        return try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            val isCorrupted = e is AEADBadTagException
+                || e is javax.crypto.BadPaddingException
+                || e is android.security.KeyStoreException
+                || e.cause is AEADBadTagException
+            if (isCorrupted && !clearOnFailure) {
+                Log.w("MpinManager", "EncryptedSharedPreferences decryption failed (Keystore/prefs corrupted), clearing and retrying", e)
+                getPrefsOrClearAndRetry(context, clearOnFailure = true)
+            } else {
+                throw e
+            }
+        }
     }
 
     private fun hashWithSalt(pin: String, salt: ByteArray): String {

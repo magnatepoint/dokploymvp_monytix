@@ -69,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.data.GoalProgressItem
 import com.example.monytix.data.GoalResponse
 import com.example.monytix.ui.theme.AccentPrimary
@@ -92,6 +93,8 @@ fun GoalTrackerScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(GtTab.OVERVIEW) }
+
+    LaunchedEffect(Unit) { AnalyticsHelper.logScreenView("goal_tracker") }
     val colorScheme = MaterialTheme.colorScheme
     var showAddGoal by remember { mutableStateOf(false) }
     var selectedGoal by remember { mutableStateOf<Pair<GoalResponse, GoalProgressItem?>?>(null) }
@@ -178,7 +181,10 @@ fun GoalTrackerScreen(
         containerColor = colorScheme.background,
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { showAddGoal = true },
+                onClick = {
+                    AnalyticsHelper.logEvent("add_goal")
+                    showAddGoal = true
+                },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
@@ -206,14 +212,23 @@ fun GoalTrackerScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
-            TabBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+            TabBar(selectedTab = selectedTab, onTabSelected = {
+                AnalyticsHelper.logEvent("tab_selected", mapOf("tab" to it.name.lowercase()))
+                selectedTab = it
+            })
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading,
                 onRefresh = { viewModel.refresh() }
             ) {
                 when (selectedTab) {
-                    GtTab.OVERVIEW -> OverviewTab(viewModel = viewModel, onGoalClick = { g, p -> selectedGoal = g to p }, onAddGoal = { showAddGoal = true })
-                    GtTab.GOALS -> GoalsListTab(viewModel = viewModel, onGoalClick = { g, p -> selectedGoal = g to p }, onAddGoal = { showAddGoal = true })
+                    GtTab.OVERVIEW -> OverviewTab(viewModel = viewModel, onGoalClick = { g, p ->
+                        AnalyticsHelper.logEvent("goal_tapped", mapOf("goal_id" to g.goal_id))
+                        selectedGoal = g to p
+                    }, onAddGoal = { showAddGoal = true })
+                    GtTab.GOALS -> GoalsListTab(viewModel = viewModel, onGoalClick = { g, p ->
+                        AnalyticsHelper.logEvent("goal_tapped", mapOf("goal_id" to g.goal_id))
+                        selectedGoal = g to p
+                    }, onAddGoal = { showAddGoal = true })
                     GtTab.AI_INSIGHTS -> AIInsightsTab(viewModel = viewModel)
                 }
             }

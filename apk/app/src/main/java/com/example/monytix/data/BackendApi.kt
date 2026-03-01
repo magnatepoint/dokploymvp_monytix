@@ -5,6 +5,7 @@ import com.example.monytix.BuildConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.android.Android
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
@@ -30,6 +31,9 @@ import kotlinx.coroutines.withContext
 object BackendApi {
 
     private val client = HttpClient(Android) {
+        install(HttpTimeout) {
+            requestTimeoutMillis = 60_000  // 60s for mobile networks (slower than WiFi)
+        }
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true
@@ -39,43 +43,80 @@ object BackendApi {
     }
 
     private val baseUrl = BuildConfig.BACKEND_URL.trimEnd('/')
+    private val backupBaseUrl = "https://backend.monytix.ai".trimEnd('/')
     private val spendsenseBase = "$baseUrl/v1/spendsense"
     private val moneymomentsBase = "$baseUrl/v1/moneymoments"
     private val budgetBase = "$baseUrl/v1/budget"
 
-    suspend fun healthCheck(): Result<HealthResponse> = withContext(Dispatchers.IO) {
-        try {
-            val response = client.get("$baseUrl/health").body<HealthResponse>()
-            Result.success(response)
+    private fun isRetryable(e: Exception): Boolean {
+        if (e is java.io.IOException) return true
+        val msg = e.message ?: ""
+        if (msg.contains("502") || msg.contains("503") || msg.contains("500") || msg.contains("timed out") || msg.contains("timeout")) return true
+        return false
+    }
+
+    private fun logNetworkError(tag: String, url: String, e: Exception) {
+        val msg = e.message ?: e.toString()
+        Log.e(tag, "Failed to reach $url: $msg", e)
+        when {
+            msg.contains("Unable to resolve host", ignoreCase = true) -> Log.w(tag, "→ Likely DNS/ISP block. Try Private DNS (dns.google)")
+            msg.contains("Connection timed out", ignoreCase = true) || msg.contains("timed out", ignoreCase = true) -> Log.w(tag, "→ Likely firewall/carrier block")
+            msg.contains("Connection refused", ignoreCase = true) -> Log.w(tag, "→ Server unreachable or port blocked")
+        }
+    }
+
+    private suspend fun <T> runWithFallback(primaryUrl: String, backupUrl: String, block: suspend (String) -> T): Result<T> {
+        return try {
+            Result.success(block(primaryUrl))
         } catch (e: Exception) {
-            Result.failure(e)
+            logNetworkError("BackendApi", primaryUrl, e)
+            if (isRetryable(e) && primaryUrl != backupUrl) {
+                Log.w("BackendApi", "Trying backup: $backupBaseUrl", e)
+                try {
+                    Result.success(block(backupUrl))
+                } catch (e2: Exception) {
+                    logNetworkError("BackendApi", backupUrl, e2)
+                    Result.failure(e2)
+                }
+            } else {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun healthCheck(): Result<HealthResponse> = withContext(Dispatchers.IO) {
+        runWithFallback("$baseUrl/health", "$backupBaseUrl/health") { url ->
+            client.get(url).body<HealthResponse>()
         }
     }
 
     suspend fun getSession(accessToken: String): Result<SessionResponse> = withContext(Dispatchers.IO) {
-        try {
-            val response = client.get("$baseUrl/auth/session") {
-                header("Authorization", "Bearer $accessToken")
-            }.body<SessionResponse>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
+        runWithFallback("$baseUrl/auth/session", "$backupBaseUrl/auth/session") { url ->
+            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<SessionResponse>()
+        }
+    }
+
+    /** Proxy login via backend when Supabase is unreachable (e.g. blocked on mobile data). */
+    suspend fun login(email: String, password: String): Result<LoginResponse> = withContext(Dispatchers.IO) {
+        runWithFallback("$baseUrl/auth/login", "$backupBaseUrl/auth/login") { url ->
+            client.post(url) {
+                contentType(ContentType.Application.Json)
+                setBody(LoginRequest(email = email, password = password))
+            }.body<LoginResponse>()
         }
     }
 
     suspend fun getConfig(): Result<ConfigResponse> = withContext(Dispatchers.IO) {
-        try {
-            val response = client.get("$baseUrl/config").body<ConfigResponse>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.success(
-                ConfigResponse(
-                    min_version_code = 1,
-                    app_store_url = "https://play.google.com/store/apps/details?id=com.example.monytix",
-                    feature_flags = emptyMap()
-                )
-            )
+        val r = runWithFallback("$baseUrl/config", "$backupBaseUrl/config") { url ->
+            client.get(url).body<ConfigResponse>()
         }
+        if (r.isSuccess) r else Result.success(
+            ConfigResponse(
+                min_version_code = 1,
+                app_store_url = "https://play.google.com/store/apps/details?id=com.example.monytix",
+                feature_flags = emptyMap()
+            )
+        )
     }
 
     suspend fun uploadStatement(
@@ -85,7 +126,7 @@ object BackendApi {
         pdfPassword: String? = null
     ): Result<UploadBatchResponse> = withContext(Dispatchers.IO) {
         Log.d("MonytixUpload", "BackendApi.uploadStatement: filename=$filename bytes=${fileBytes.size}")
-        try {
+        runWithFallback("$spendsenseBase/uploads/file", "$backupBaseUrl/v1/spendsense/uploads/file") { url ->
             val contentType = when {
                 filename.endsWith(".pdf", ignoreCase = true) -> ContentType.parse("application/pdf")
                 filename.endsWith(".csv", ignoreCase = true) -> ContentType.Text.CSV
@@ -100,31 +141,18 @@ object BackendApi {
                 })
                 pdfPassword?.let { append("password", it) }
             }
-            val response = client.submitFormWithBinaryData(
-                url = "$spendsenseBase/uploads/file",
-                formData = parts
-            ) {
+            client.submitFormWithBinaryData(url = url, formData = parts) {
                 header("Authorization", "Bearer $accessToken")
             }.body<UploadBatchResponse>()
-            Log.d("MonytixUpload", "BackendApi.uploadStatement: success batch_id=${response.upload_id}")
-            Result.success(response)
-        } catch (e: Exception) {
-            Log.e("MonytixUpload", "BackendApi.uploadStatement: exception", e)
-            Result.failure(e)
-        }
+        }.also { r -> if (r.isSuccess) Log.d("MonytixUpload", "BackendApi.uploadStatement: success batch_id=${r.getOrNull()?.upload_id}") else Log.e("MonytixUpload", "BackendApi.uploadStatement: exception", r.exceptionOrNull()) }
     }
 
     suspend fun getBatchStatus(
         accessToken: String,
         batchId: String
     ): Result<UploadBatchResponse> = withContext(Dispatchers.IO) {
-        try {
-            val response = client.get("$spendsenseBase/batches/$batchId") {
-                header("Authorization", "Bearer $accessToken")
-            }.body<UploadBatchResponse>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
+        runWithFallback("$spendsenseBase/batches/$batchId", "$backupBaseUrl/v1/spendsense/batches/$batchId") { url ->
+            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<UploadBatchResponse>()
         }
     }
 
@@ -132,15 +160,12 @@ object BackendApi {
         accessToken: String,
         data: TransactionCreateRequest
     ): Result<TransactionCreateResponse> = withContext(Dispatchers.IO) {
-        try {
-            val response = client.post("$spendsenseBase/transactions") {
+        runWithFallback("$spendsenseBase/transactions", "$backupBaseUrl/v1/spendsense/transactions") { url ->
+            client.post(url) {
                 header("Authorization", "Bearer $accessToken")
                 contentType(io.ktor.http.ContentType.Application.Json)
                 setBody(data)
             }.body<TransactionCreateResponse>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
@@ -148,25 +173,15 @@ object BackendApi {
         accessToken: String,
         month: String? = null
     ): Result<KpiResponse> = withContext(Dispatchers.IO) {
-        try {
-            val url = if (month != null) "$spendsenseBase/kpis?month=$month" else "$spendsenseBase/kpis"
-            val response = client.get(url) {
-                header("Authorization", "Bearer $accessToken")
-            }.body<KpiResponse>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
+        val path = if (month != null) "/v1/spendsense/kpis?month=$month" else "/v1/spendsense/kpis"
+        runWithFallback("$baseUrl$path", "$backupBaseUrl$path") { url ->
+            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<KpiResponse>()
         }
     }
 
     suspend fun getAccounts(accessToken: String): Result<AccountsResponse> = withContext(Dispatchers.IO) {
-        try {
-            val response = client.get("$spendsenseBase/accounts") {
-                header("Authorization", "Bearer $accessToken")
-            }.body<AccountsResponse>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
+        runWithFallback("$spendsenseBase/accounts", "$backupBaseUrl/v1/spendsense/accounts") { url ->
+            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<AccountsResponse>()
         }
     }
 
@@ -175,40 +190,25 @@ object BackendApi {
         startDate: String? = null,
         endDate: String? = null
     ): Result<InsightsResponse> = withContext(Dispatchers.IO) {
-        try {
-            val params = buildList {
-                startDate?.let { add("start_date=$it") }
-                endDate?.let { add("end_date=$it") }
-            }
-            val url = if (params.isEmpty()) "$spendsenseBase/insights" else "$spendsenseBase/insights?${params.joinToString("&")}"
-            val response = client.get(url) {
-                header("Authorization", "Bearer $accessToken")
-            }.body<InsightsResponse>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
+        val params = buildList {
+            startDate?.let { add("start_date=$it") }
+            endDate?.let { add("end_date=$it") }
+        }
+        val path = if (params.isEmpty()) "/v1/spendsense/insights" else "/v1/spendsense/insights?${params.joinToString("&")}"
+        runWithFallback("$baseUrl$path", "$backupBaseUrl$path") { url ->
+            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<InsightsResponse>()
         }
     }
 
     suspend fun getGoalsProgress(accessToken: String): Result<GoalsProgressResponse> = withContext(Dispatchers.IO) {
-        try {
-            val response = client.get("$baseUrl/v1/goals/progress") {
-                header("Authorization", "Bearer $accessToken")
-            }.body<GoalsProgressResponse>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
+        runWithFallback("$baseUrl/v1/goals/progress", "$backupBaseUrl/v1/goals/progress") { url ->
+            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<GoalsProgressResponse>()
         }
     }
 
     suspend fun getUserGoals(accessToken: String): Result<List<GoalResponse>> = withContext(Dispatchers.IO) {
-        try {
-            val response = client.get("$baseUrl/v1/goals") {
-                header("Authorization", "Bearer $accessToken")
-            }.body<List<GoalResponse>>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
+        runWithFallback("$baseUrl/v1/goals", "$backupBaseUrl/v1/goals") { url ->
+            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<List<GoalResponse>>()
         }
     }
 
@@ -232,12 +232,13 @@ object BackendApi {
                 goalType?.let { put("goal_type", it) }
                 importance?.let { put("importance", it) }
             }
-            val response = client.post("$baseUrl/v1/goals") {
-                header("Authorization", "Bearer $accessToken")
-                contentType(io.ktor.http.ContentType.Application.Json)
-                setBody(TextContent(Json.encodeToString(body), io.ktor.http.ContentType.Application.Json))
-            }.body<CreateGoalResponse>()
-            Result.success(response)
+            runWithFallback("$baseUrl/v1/goals", "$backupBaseUrl/v1/goals") { url ->
+                client.post(url) {
+                    header("Authorization", "Bearer $accessToken")
+                    contentType(io.ktor.http.ContentType.Application.Json)
+                    setBody(TextContent(body.toString(), io.ktor.http.ContentType.Application.Json))
+                }.body<CreateGoalResponse>()
+            }
         } catch (e: Exception) {
             val msg = extractErrorMessage(e)
             Log.e("BackendApi", "createGoal failed: $msg", e)
@@ -273,33 +274,26 @@ object BackendApi {
         goalType: String? = null,
         importance: Int? = null
     ): Result<GoalResponse> = withContext(Dispatchers.IO) {
-        try {
-            val body = buildJsonObject {
-                estimatedCost?.let { put("estimated_cost", it) }
-                targetDate?.let { put("target_date", it) }
-                currentSavings?.let { put("current_savings", it) }
-                goalType?.let { put("goal_type", it) }
-                importance?.let { put("importance", it) }
-            }
-            val response = client.put("$baseUrl/v1/goals/$goalId") {
+        val body = buildJsonObject {
+            estimatedCost?.let { put("estimated_cost", it) }
+            targetDate?.let { put("target_date", it) }
+            currentSavings?.let { put("current_savings", it) }
+            goalType?.let { put("goal_type", it) }
+            importance?.let { put("importance", it) }
+        }
+        runWithFallback("$baseUrl/v1/goals/$goalId", "$backupBaseUrl/v1/goals/$goalId") { url ->
+            client.put(url) {
                 header("Authorization", "Bearer $accessToken")
                 contentType(io.ktor.http.ContentType.Application.Json)
-                setBody(TextContent(Json.encodeToString(body), io.ktor.http.ContentType.Application.Json))
+                setBody(TextContent(body.toString(), io.ktor.http.ContentType.Application.Json))
             }.body<GoalResponse>()
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
     suspend fun deleteGoal(accessToken: String, goalId: String): Result<Unit> = withContext(Dispatchers.IO) {
-        try {
-            client.delete("$baseUrl/v1/goals/$goalId") {
-                header("Authorization", "Bearer $accessToken")
-            }
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+        runWithFallback("$baseUrl/v1/goals/$goalId", "$backupBaseUrl/v1/goals/$goalId") { url ->
+            client.delete(url) { header("Authorization", "Bearer $accessToken") }
+            Unit
         }
     }
 
@@ -739,6 +733,21 @@ data class SessionResponse(
 )
 
 @kotlinx.serialization.Serializable
+data class LoginRequest(
+    val email: String,
+    val password: String
+)
+
+@kotlinx.serialization.Serializable
+data class LoginResponse(
+    val access_token: String,
+    val refresh_token: String,
+    val token_type: String = "bearer",
+    val expires_in: Int,
+    val user: kotlinx.serialization.json.JsonObject? = null
+)
+
+@kotlinx.serialization.Serializable
 data class UploadBatchResponse(
     val upload_id: String,
     val batch_id: String? = null,
@@ -993,6 +1002,7 @@ data class TransactionListResponse(
     val page_size: Int = 25
 )
 
+@kotlinx.serialization.Serializable
 data class TransactionSummaryResponse(
     val debit_total: Double = 0.0,
     val credit_total: Double = 0.0,

@@ -44,49 +44,42 @@ export default function Home() {
   }, [])
 
   const validateSessionWithBackend = async (session: Session) => {
-    try {
-      // Validate API URL - should not contain paths and should point to API domain
-      const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://34.14.136.76:8001'
-      let API_BASE_URL = rawApiUrl.split('/').slice(0, 3).join('/') // Remove any paths
-      
-      // Check if hostname is wrong (points to frontend instead of API)
-      const urlObj = new URL(API_BASE_URL)
-      const isWrongHostname = urlObj.hostname === 'mvp.monytix.ai' || urlObj.hostname.includes('mvp.monytix.ai')
-      
-      // If hostname is wrong, use the correct default API URL
-      if (isWrongHostname) {
-        console.error('[Debug] ⚠️ CRITICAL: NEXT_PUBLIC_API_URL points to frontend domain!')
-        console.error('[Debug] Current value:', rawApiUrl)
-        console.error('[Debug] Using fallback: http://34.14.136.76:8001')
-        console.error('[Debug] Fix in Cloudflare Pages → Settings → Environment Variables')
-        API_BASE_URL = 'http://34.14.136.76:8001'
-      }
-      
-      console.log('[Debug] API URL:', API_BASE_URL)
-      
-      const response = await fetch(`${API_BASE_URL}/auth/session`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      })
+    const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.monytix.ai'
+    let API_BASE_URL = rawApiUrl.split('/').slice(0, 3).join('/')
+    const urlObj = new URL(API_BASE_URL)
+    const isWrongHostname = urlObj.hostname === 'mvp.monytix.ai' || urlObj.hostname.includes('mvp.monytix.ai')
+    if (isWrongHostname) API_BASE_URL = 'https://api.monytix.ai'
+    const BACKUP_URL = 'https://backend.monytix.ai'
 
-      if (response.ok) {
-        // Session is valid, user can access the app
+    const tryValidate = async (base: string) => {
+      const res = await fetch(`${base}/auth/session`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      return res.ok
+    }
+
+    try {
+      let ok = await tryValidate(API_BASE_URL)
+      if (!ok && API_BASE_URL !== BACKUP_URL) {
+        console.warn('[Debug] Primary backend failed, trying backup:', BACKUP_URL)
+        ok = await tryValidate(BACKUP_URL)
+      }
+      if (ok) {
         console.log('Session validated with backend')
       } else {
-        // Session invalid, sign out
-        console.warn('Session validation failed:', response.status, response.statusText)
+        console.warn('Session validation failed')
         await supabase.auth.signOut()
         setSession(null)
       }
     } catch (error) {
-      console.error('Failed to validate session:', error)
-      // Don't sign out on network errors - might be temporary connectivity issue
-      if (error instanceof TypeError && error.message === 'Failed to fetch') {
-        console.error('Network error - check if NEXT_PUBLIC_API_URL is set correctly in Cloudflare Pages environment variables')
-        console.error('Current API URL:', process.env.NEXT_PUBLIC_API_URL || 'http://34.14.136.76:8001 (default)')
+      if (API_BASE_URL !== BACKUP_URL) {
+        try {
+          const ok = await tryValidate(BACKUP_URL)
+          if (ok) { console.log('Session validated with backup backend'); return }
+        } catch (_) {}
       }
+      console.error('Failed to validate session:', error)
     }
   }
 

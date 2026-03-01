@@ -41,6 +41,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.LaunchedEffect
+import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.data.MoneyMoment
 import com.example.monytix.data.Nudge
 import com.example.monytix.ui.theme.GlassCard
@@ -53,6 +55,8 @@ fun MoneyMomentsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(MmTab.NUDGES) }
+
+    LaunchedEffect(Unit) { AnalyticsHelper.logScreenView("money_moments") }
     val colorScheme = MaterialTheme.colorScheme
 
     Scaffold(
@@ -65,7 +69,10 @@ fun MoneyMomentsScreen(
                 ),
                 actions = {
                     IconButton(
-                        onClick = { viewModel.loadData() },
+                        onClick = {
+                            AnalyticsHelper.logEvent("refresh")
+                            viewModel.loadData()
+                        },
                         enabled = !uiState.isMomentsLoading && !uiState.isNudgesLoading
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = colorScheme.onBackground)
@@ -81,7 +88,10 @@ fun MoneyMomentsScreen(
                 .padding(innerPadding)
         ) {
             WelcomeBanner(username = uiState.userEmail)
-            TabBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+            TabBar(selectedTab = selectedTab, onTabSelected = {
+                AnalyticsHelper.logEvent("tab_selected", mapOf("tab" to it.name.lowercase()))
+                selectedTab = it
+            })
             when (selectedTab) {
                 MmTab.NUDGES -> NudgesTab(viewModel = viewModel)
                 MmTab.HABITS -> HabitsTab(viewModel = viewModel)
@@ -166,7 +176,10 @@ private fun NudgesTab(viewModel: MoneyMomentsViewModel) {
         EmptyState(
             title = "Unable to Load Nudges",
             subtitle = uiState.nudgesError ?: "",
-            onRetry = { viewModel.loadData() }
+            onRetry = {
+                AnalyticsHelper.logEvent("refresh")
+                viewModel.loadData()
+            }
         )
         return
     }
@@ -210,7 +223,10 @@ private fun NudgesTab(viewModel: MoneyMomentsViewModel) {
                     )
                     uiState.actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     Button(
-                        onClick = { viewModel.evaluateAndDeliverNudges() },
+                        onClick = {
+                            AnalyticsHelper.logEvent("evaluate_nudges")
+                            viewModel.evaluateAndDeliverNudges()
+                        },
                         enabled = !uiState.isEvaluating && !uiState.isComputing,
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
                     ) {
@@ -227,7 +243,10 @@ private fun NudgesTab(viewModel: MoneyMomentsViewModel) {
                 NudgeCard(
                     nudge = nudge,
                     onView = { viewModel.logNudgeInteraction(nudge.delivery_id, "view") },
-                    onCtaClick = { viewModel.logNudgeInteraction(nudge.delivery_id, "click") }
+                    onCtaClick = {
+                        AnalyticsHelper.logEvent("nudge_cta_tapped", mapOf("nudge_id" to nudge.delivery_id))
+                        viewModel.logNudgeInteraction(nudge.delivery_id, "click")
+                    }
                 )
             }
         }
@@ -313,7 +332,10 @@ private fun HabitsTab(viewModel: MoneyMomentsViewModel) {
         EmptyState(
             title = "Unable to Load Habits",
             subtitle = uiState.momentsError ?: "",
-            onRetry = { viewModel.loadData() }
+            onRetry = {
+                AnalyticsHelper.logEvent("refresh")
+                viewModel.loadData()
+            }
         )
         return
     }
@@ -337,7 +359,10 @@ private fun HabitsTab(viewModel: MoneyMomentsViewModel) {
             uiState.actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Spacer(Modifier.height(16.dp))
             Button(
-                onClick = { viewModel.computeMoments() },
+                onClick = {
+                    AnalyticsHelper.logEvent("compute_moments")
+                    viewModel.computeMoments()
+                },
                 enabled = !uiState.isComputing,
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
             ) {

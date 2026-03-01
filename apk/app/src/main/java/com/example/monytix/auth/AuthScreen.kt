@@ -38,25 +38,34 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.monytix.R
+import com.example.monytix.analytics.AnalyticsHelper
 
 @Composable
 fun AuthScreen(
     viewModel: AuthViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val activity = context as? androidx.activity.ComponentActivity
     val uiState by viewModel.uiState.collectAsState()
 
+    LaunchedEffect(uiState.authStep) {
+        val screenName = if (uiState.authStep == AuthStep.OTP) "otp" else "auth"
+        AnalyticsHelper.logScreenView(screenName)
+    }
+
     when (uiState.authStep) {
-        AuthStep.LOGIN -> LoginContent(viewModel = viewModel, uiState = uiState)
+        AuthStep.LOGIN -> LoginContent(viewModel = viewModel, uiState = uiState, activity = activity)
         AuthStep.OTP -> OtpScreen(
             phone = uiState.phoneForOtp,
             otp = uiState.otp,
             onOtpChange = { viewModel.setOtp(it) },
             resendSecondsLeft = uiState.resendSecondsLeft,
             onVerify = { viewModel.verifyOtp() },
-            onResend = { viewModel.resendOtp() }
+            onResend = { activity?.let { viewModel.resendOtp(it) } }
         )
     }
 }
@@ -65,8 +74,10 @@ fun AuthScreen(
 private fun LoginContent(
     viewModel: AuthViewModel,
     uiState: AuthUiState,
+    activity: androidx.activity.ComponentActivity?,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var phone by remember { mutableStateOf("") }
     var showEmailOption by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
@@ -87,7 +98,7 @@ private fun LoginContent(
     ) {
         Spacer(modifier = Modifier.height(24.dp))
         Image(
-            painter = painterResource(R.drawable.splash_logo),
+            painter = painterResource(R.drawable.logo),
             contentDescription = "MONYTIX Logo",
             modifier = Modifier.size(120.dp)
         )
@@ -128,7 +139,7 @@ private fun LoginContent(
         )
         Spacer(modifier = Modifier.height(16.dp))
         Button(
-            onClick = { viewModel.sendPhoneOtp(phone) },
+            onClick = { activity?.let { viewModel.sendPhoneOtp(phone, it) } },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             enabled = !uiState.isLoading && phone.length >= 10,
             shape = RoundedCornerShape(12.dp),
@@ -150,7 +161,11 @@ private fun LoginContent(
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedButton(
-            onClick = { viewModel.signInWithGoogle() },
+            onClick = {
+                (context as? androidx.activity.ComponentActivity)?.let {
+                    viewModel.signInWithGoogle(it)
+                }
+            },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             enabled = !uiState.isLoading,
             shape = RoundedCornerShape(12.dp),
@@ -158,6 +173,13 @@ private fun LoginContent(
         ) {
             Text(stringResource(R.string.auth_google), fontWeight = FontWeight.Medium)
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "If the login page doesn't load on mobile data: Settings → Network → Private DNS → set to \"dns.google\"",
+            style = MaterialTheme.typography.labelSmall,
+            color = colorScheme.onSurface.copy(alpha = 0.5f),
+            modifier = Modifier.fillMaxWidth()
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
         TextButton(onClick = { showEmailOption = !showEmailOption }) {

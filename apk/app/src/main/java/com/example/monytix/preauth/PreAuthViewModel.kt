@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.monytix.BuildConfig
+import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.data.BackendApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
@@ -125,6 +126,7 @@ class PreAuthViewModel(
 
     fun completeOnboarding() {
         viewModelScope.launch {
+            AnalyticsHelper.logEvent("onboarding_complete")
             PreAuthPreferences.setOnboardingComplete(application, true)
             _uiState.update { it.copy(step = PreAuthStep.TermsConditions) }
         }
@@ -132,6 +134,7 @@ class PreAuthViewModel(
 
     fun acceptTerms() {
         viewModelScope.launch {
+            AnalyticsHelper.logEvent("terms_accepted")
             PreAuthPreferences.setTermsAccepted(application, true)
             _uiState.update { it.copy(step = PreAuthStep.PrivacyPolicy) }
         }
@@ -139,6 +142,7 @@ class PreAuthViewModel(
 
     fun completePrivacyPolicy() {
         viewModelScope.launch {
+            AnalyticsHelper.logEvent("privacy_continue")
             PreAuthPreferences.setPrivacyViewed(application, true)
             _uiState.update { it.copy(step = PreAuthStep.DataProcessingConsent) }
         }
@@ -146,6 +150,7 @@ class PreAuthViewModel(
 
     fun acceptDataConsent() {
         viewModelScope.launch {
+            AnalyticsHelper.logEvent("data_consent_accepted")
             PreAuthPreferences.setDataConsent(application, true)
             _uiState.update { it.copy(step = PreAuthStep.PermissionExplainer) }
         }
@@ -153,6 +158,7 @@ class PreAuthViewModel(
 
     fun completePermissionExplainer() {
         viewModelScope.launch {
+            AnalyticsHelper.logEvent("permission_continue")
             PreAuthPreferences.setPermissionsExplained(application, true)
             _uiState.update { it.copy(step = PreAuthStep.Auth) }
         }
@@ -162,12 +168,14 @@ class PreAuthViewModel(
 
     fun completeDeviceVerification() {
         viewModelScope.launch {
+            AnalyticsHelper.logEvent("device_verification_continue")
             advanceToNextStep(updateRequired = false, securityOk = true)
         }
     }
 
     fun goToAuth() {
         viewModelScope.launch {
+            AnalyticsHelper.logEvent("login_clicked")
             PreAuthPreferences.setOnboardingComplete(application, true)
             PreAuthPreferences.setTermsAccepted(application, true)
             PreAuthPreferences.setPrivacyViewed(application, true)

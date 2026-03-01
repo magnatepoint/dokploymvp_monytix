@@ -6,9 +6,9 @@ import com.example.monytix.data.BackendApi
 import com.example.monytix.data.GoalProgressItem
 import com.example.monytix.data.InsightsResponse
 import com.example.monytix.data.KpiResponse
-import com.example.monytix.data.Supabase
+import com.example.monytix.analytics.AnalyticsHelper
+import com.example.monytix.auth.FirebaseAuthManager
 import com.example.monytix.data.TransactionRecordResponse
-import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -63,8 +63,8 @@ class HomeViewModel : ViewModel() {
         checkBackend()
     }
 
-    private fun getAccessToken(): String? =
-        Supabase.client.auth.currentSessionOrNull()?.accessToken
+    private suspend fun getAccessToken(): String? =
+        FirebaseAuthManager.getIdToken()
 
     fun loadDashboard() {
         viewModelScope.launch {
@@ -298,6 +298,7 @@ class HomeViewModel : ViewModel() {
     }
 
     fun refresh() {
+        AnalyticsHelper.logEvent("refresh")
         loadDashboard()
         checkBackend()
     }

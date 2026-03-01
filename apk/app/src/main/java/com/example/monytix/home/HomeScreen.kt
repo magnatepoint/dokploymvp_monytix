@@ -55,7 +55,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -85,6 +84,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import com.example.monytix.AppDestinations
+import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.ui.theme.AccentPrimary
 import com.example.monytix.ui.theme.HeroCardGlow
 import com.example.monytix.ui.theme.AccentSecondary
@@ -107,6 +107,7 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(ConsoleTab.OVERVIEW) }
 
+    LaunchedEffect(Unit) { AnalyticsHelper.logScreenView("home") }
     LaunchedEffect(isSelected) {
         if (isSelected) viewModel.refresh()
     }
@@ -121,6 +122,18 @@ fun HomeScreen(
                     titleContentColor = colorScheme.onBackground
                 ),
                 actions = {
+                    IconButton(onClick = {
+                        AnalyticsHelper.logEvent("upload_statement")
+                        onLaunchFilePicker()
+                    }) {
+                        Icon(Icons.Default.Upload, contentDescription = "Upload statement", tint = colorScheme.onBackground)
+                    }
+                    IconButton(onClick = {
+                        AnalyticsHelper.logEvent("add_transaction")
+                        onAddTransaction()
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add transaction", tint = colorScheme.onBackground)
+                    }
                     val infiniteTransition = rememberInfiniteTransition(label = "refresh_spin")
                     val rotation by infiniteTransition.animateFloat(
                         initialValue = 0f,
@@ -171,7 +184,10 @@ fun HomeScreen(
                     )
             ) {
             WelcomeBanner(username = uiState.userEmail ?: "User")
-            TabBar(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+            TabBar(selectedTab = selectedTab, onTabSelected = {
+                AnalyticsHelper.logEvent("tab_selected", mapOf("tab" to it.name.lowercase()))
+                selectedTab = it
+            })
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading,
                 onRefresh = { viewModel.refresh() }
@@ -198,32 +214,11 @@ fun HomeScreen(
                             )
                             ConsoleTab.ACCOUNTS -> AccountsTab(accounts = uiState.accounts, onRetry = { viewModel.refresh() })
                             ConsoleTab.SPENDING -> SpendingTab(viewModel = viewModel)
-                            ConsoleTab.GOALS -> GoalsTab(viewModel = viewModel)
+                            ConsoleTab.GOALS -> GoalsTab(viewModel = viewModel, onNavigateTo = onNavigateTo)
                             ConsoleTab.AI_INSIGHT -> AIInsightTab(viewModel = viewModel)
                         }
                     }
                 }
-            }
-        }
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 80.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            FloatingActionButton(
-                onClick = onLaunchFilePicker,
-                containerColor = SurfaceElevated,
-                contentColor = MaterialTheme.colorScheme.onSurface
-            ) {
-                Icon(Icons.Default.Upload, contentDescription = "Upload PDF")
-            }
-            FloatingActionButton(
-                onClick = onAddTransaction,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Transaction")
             }
         }
     }
@@ -358,6 +353,7 @@ private fun OverviewTab(
                     totalBalance = totalBalance,
                     onInfoClick = { showNetWorthDialog = true },
                     onClick = {
+                        AnalyticsHelper.logEvent("net_worth_tapped")
                         onNavigateTo(AppDestinations.DATA)
                         onShowSnackbar("Net worth = assets minus liabilities. View in SpendSense.")
                     }
@@ -470,6 +466,7 @@ private fun OverviewTab(
                 RecentTransactionRow(
                     transaction = txn,
                     onClick = {
+                        AnalyticsHelper.logEvent("transaction_tapped", mapOf("txn_id" to txn.txn_id))
                         onNavigateTo(AppDestinations.DATA)
                         onShowSnackbar("View all transactions in SpendSense.")
                     }
@@ -1171,7 +1168,10 @@ private fun SpendingTab(viewModel: HomeViewModel) {
 }
 
 @Composable
-private fun GoalsTab(viewModel: HomeViewModel) {
+private fun GoalsTab(
+    viewModel: HomeViewModel,
+    onNavigateTo: (AppDestinations) -> Unit = {}
+) {
     val goals = viewModel.transformGoals()
     if (goals.isEmpty()) {
         EmptyState(title = "No Goals", subtitle = "Create your first financial goal to get started")
@@ -1200,7 +1200,12 @@ private fun GoalsTab(viewModel: HomeViewModel) {
                 else -> Color.Transparent
             }
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        AnalyticsHelper.logEvent("goal_card_tapped", mapOf("goal_id" to goal.id))
+                        onNavigateTo(AppDestinations.GOALS)
+                    },
                 colors = CardDefaults.cardColors(containerColor = GlassCard),
                 shape = RoundedCornerShape(16.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),

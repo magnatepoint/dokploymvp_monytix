@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -20,8 +21,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
 import com.example.monytix.R
+import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.auth.AuthScreen
 import com.example.monytix.auth.AuthViewModel
 import com.example.monytix.security.DeviceVerificationScreen
@@ -33,6 +37,21 @@ fun PreAuthScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by preAuthViewModel.uiState.collectAsState()
+
+    LaunchedEffect(uiState.step) {
+        val screenName = when (uiState.step) {
+            PreAuthStep.Splash -> "splash"
+            PreAuthStep.UpdateRequired -> "update_required"
+            PreAuthStep.DeviceVerification -> "device_verification"
+            PreAuthStep.Onboarding -> "onboarding"
+            PreAuthStep.TermsConditions -> "terms_conditions"
+            PreAuthStep.PrivacyPolicy -> "privacy_policy"
+            PreAuthStep.DataProcessingConsent -> "data_consent"
+            PreAuthStep.PermissionExplainer -> "permission_explainer"
+            PreAuthStep.Auth -> "auth"
+        }
+        AnalyticsHelper.logScreenView(screenName)
+    }
 
     when (uiState.step) {
         PreAuthStep.Splash -> SplashContent(isLoading = uiState.isLoading)
@@ -70,6 +89,7 @@ private fun SplashContent(
     isLoading: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val teal = Color(0xFF14B8A6)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -79,21 +99,41 @@ private fun SplashContent(
         verticalArrangement = Arrangement.Center
     ) {
         Image(
-            painter = painterResource(R.drawable.splash_logo),
+            painter = painterResource(R.drawable.logo),
             contentDescription = "MONYTIX Logo",
             modifier = Modifier.size(160.dp)
         )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = stringResource(R.string.splash_tagline),
-            style = MaterialTheme.typography.bodyLarge,
-            color = Color.White.copy(alpha = 0.7f)
+            text = stringResource(R.string.splash_monytix),
+            style = MaterialTheme.typography.headlineLarge,
+            color = Color.White,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = stringResource(R.string.splash_ai_intelligence),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.6f)
         )
         Spacer(modifier = Modifier.height(24.dp))
+        androidx.compose.material3.LinearProgressIndicator(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp),
+            color = teal,
+            trackColor = Color.White.copy(alpha = 0.2f)
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = stringResource(R.string.splash_securing),
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.6f)
+        )
         if (isLoading) {
+            Spacer(modifier = Modifier.height(16.dp))
             CircularProgressIndicator(
                 modifier = Modifier.size(32.dp),
-                color = Color.White,
+                color = teal,
                 strokeWidth = 2.dp
             )
         }

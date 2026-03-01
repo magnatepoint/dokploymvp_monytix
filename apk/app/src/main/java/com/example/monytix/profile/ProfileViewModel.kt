@@ -2,9 +2,8 @@ package com.example.monytix.profile
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.monytix.auth.FirebaseAuthManager
 import com.example.monytix.data.BackendApi
-import com.example.monytix.data.Supabase
-import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,11 +33,11 @@ class ProfileViewModel : ViewModel() {
 
     private fun loadUser() {
         viewModelScope.launch {
-            val session = Supabase.client.auth.currentSessionOrNull()
+            val user = FirebaseAuthManager.currentUser
             _uiState.update {
                 it.copy(
-                    userEmail = session?.user?.email,
-                    userId = session?.user?.id
+                    userEmail = user?.email,
+                    userId = user?.uid
                 )
             }
         }
@@ -46,7 +45,7 @@ class ProfileViewModel : ViewModel() {
 
     fun deleteAllData() {
         viewModelScope.launch {
-            val token = Supabase.client.auth.currentSessionOrNull()?.accessToken ?: run {
+            val token = FirebaseAuthManager.getIdToken() ?: run {
                 _uiState.update { it.copy(error = "Not signed in") }
                 return@launch
             }
@@ -80,14 +79,14 @@ class ProfileViewModel : ViewModel() {
 
     fun logout() {
         viewModelScope.launch {
-            Supabase.client.auth.signOut()
+            FirebaseAuthManager.signOut()
         }
     }
 
     fun exportData() {
         viewModelScope.launch {
             _uiState.update { it.copy(isExporting = true, error = null) }
-            val token = Supabase.client.auth.currentSessionOrNull()?.accessToken ?: run {
+            val token = FirebaseAuthManager.getIdToken() ?: run {
                 _uiState.update { it.copy(isExporting = false, error = "Not signed in") }
                 return@launch
             }
@@ -129,7 +128,7 @@ class ProfileViewModel : ViewModel() {
     fun deleteAccount() {
         viewModelScope.launch {
             // TODO: Call backend delete account when available
-            Supabase.client.auth.signOut()
+            FirebaseAuthManager.signOut()
         }
     }
 }
