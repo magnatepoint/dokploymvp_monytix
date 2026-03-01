@@ -10,13 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Copy dependency files
-COPY pyproject.toml requirements.txt ./
+# Copy dependency files (split to reduce peak disk during build)
+COPY pyproject.toml requirements*.txt ./
 
-# Install Python dependencies
-# Use python -m pip to avoid issues with pip uninstalling itself
-RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies in batches to reduce peak disk usage (helps low-disk servers)
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir -r requirements-core.txt && rm -rf /tmp/*
+RUN pip install --no-cache-dir -r requirements-data.txt && rm -rf /tmp/*
+RUN pip install --no-cache-dir -r requirements-ml.txt && rm -rf /tmp/*
+RUN pip install --no-cache-dir -r requirements-google.txt && rm -rf /tmp/*
 
 # Production stage
 FROM python:3.11-slim

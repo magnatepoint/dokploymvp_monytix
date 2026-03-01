@@ -1,0 +1,6 @@
+# Google & Firebase - heavy (~100MB)
+google-api-python-client>=2.146.0,<3.0.0
+google-auth>=2.35.0,<3.0.0
+google-auth-httplib2>=0.2.0,<1.0.0
+google-cloud-pubsub>=2.24.0,<3.0.0
+firebase-admin>=6.6.0,<7.0.0
