@@ -2,12 +2,12 @@
 
 from datetime import date
 from typing import Any
-from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.auth.dependencies import AuthenticatedUser, get_current_user
+from app.core.user_id import firebase_uid_to_uuid
 from app.dependencies.database import Pool, get_db_pool
 from .service import BudgetService
 
@@ -52,7 +52,7 @@ async def get_recommendations(
     - score, recommendation_reason
     - goal_preview (allocation preview per goal)
     """
-    recommendations = await service.get_recommendations(UUID(user.user_id), month)
+    recommendations = await service.get_recommendations(firebase_uid_to_uuid(user.user_id), month)
     return {"recommendations": recommendations}
 
 
@@ -70,7 +70,7 @@ async def commit_budget(
     """
     month = payload.month or date.today().replace(day=1)
     committed = await service.commit_budget(
-        UUID(user.user_id),
+        firebase_uid_to_uuid(user.user_id),
         month,
         payload.plan_code,
         payload.goal_allocations,
@@ -86,7 +86,7 @@ async def get_committed_budget(
     service: BudgetService = Depends(get_service),
 ) -> dict[str, Any]:
     """Get user's committed budget for a month (defaults to current month)."""
-    committed = await service.get_committed_budget(UUID(user.user_id), month)
+    committed = await service.get_committed_budget(firebase_uid_to_uuid(user.user_id), month)
     if not committed:
         return {"status": "no_commitment", "budget": None}
     return {"status": "committed", "budget": committed}
@@ -102,7 +102,7 @@ async def get_budget_state(
     Get full budget state for the month. Refreshes aggregate before returning.
     Returns: month, committed_plan, actual, deviation, plans (with scores), last_updated_at.
     """
-    return await service.get_budget_state(UUID(user.user_id), month)
+    return await service.get_budget_state(firebase_uid_to_uuid(user.user_id), month)
 
 
 @router.post("/recalculate", summary="Force recalculate budget aggregate for current month")
@@ -134,7 +134,7 @@ async def get_budget_variance(
     - wants_amt, planned_wants_amt, variance_wants_amt
     - assets_amt, planned_assets_amt, variance_assets_amt
     """
-    aggregate = await service.get_month_aggregate(UUID(user.user_id), month)
+    aggregate = await service.get_month_aggregate(firebase_uid_to_uuid(user.user_id), month)
     if not aggregate:
         return {"status": "no_data", "aggregate": None}
     return {"status": "ok", "aggregate": aggregate}
@@ -152,7 +152,7 @@ async def apply_adjustment(
     """
     month = payload.month or date.today().replace(day=1)
     result = await service.apply_adjustment(
-        UUID(user.user_id),
+        firebase_uid_to_uuid(user.user_id),
         month,
         payload.shift_from,
         payload.shift_to,

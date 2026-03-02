@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.auth.dependencies import AuthenticatedUser, get_current_user
+from app.core.user_id import firebase_uid_to_uuid
 from app.dependencies.database import Pool, get_db_pool
 from .service import MoneyMomentsService
 
@@ -47,7 +48,7 @@ async def get_moments(
     logger = logging.getLogger(__name__)
     
     logger.info(f"GET /moments - user_id={user.user_id}, month={month}, all_months={all_months}")
-    moments = await service.get_moments(UUID(user.user_id), month, all_months)
+    moments = await service.get_moments(firebase_uid_to_uuid(user.user_id), month, all_months)
     logger.info(f"Returning {len(moments)} moments for user {user.user_id}")
     return {"moments": moments}
 
@@ -95,7 +96,7 @@ async def compute_moments(
     
     target_month = target_month_date
     
-    user_uuid = UUID(user.user_id)
+    user_uuid = firebase_uid_to_uuid(user.user_id)
     logger.info(f"POST /moments/compute - user_id={user.user_id} (UUID: {user_uuid}), target_month={target_month}, email={user.email}")
     moments = await service.compute_moments(user_uuid, target_month)
     logger.info(f"Computed {len(moments)} moments for user {user.user_id}, month {target_month}")
@@ -128,7 +129,7 @@ async def get_nudges(
     logger = logging.getLogger(__name__)
     
     logger.info(f"GET /nudges - user_id={user.user_id}, limit={limit}")
-    nudges = await service.get_nudges(UUID(user.user_id), limit)
+    nudges = await service.get_nudges(firebase_uid_to_uuid(user.user_id), limit)
     logger.info(f"Returning {len(nudges)} nudges for user {user.user_id}")
     return {"nudges": nudges}
 
@@ -142,7 +143,7 @@ async def log_nudge_interaction(
 ) -> dict[str, Any]:
     """Log user interaction with a nudge (view, click, dismiss)."""
     await service.log_interaction(
-        UUID(user.user_id),
+        firebase_uid_to_uuid(user.user_id),
         delivery_id,
         payload.event_type,
         payload.metadata,
@@ -160,7 +161,7 @@ async def evaluate_nudges(
     Evaluate nudge rules for the user and create candidates.
     Typically called by a scheduled job, but can be triggered manually.
     """
-    result = await service.evaluate_and_queue_nudges(UUID(user.user_id), as_of_date)
+    result = await service.evaluate_and_queue_nudges(firebase_uid_to_uuid(user.user_id), as_of_date)
     return result
 
 
@@ -175,7 +176,7 @@ async def process_nudges(
     Typically called by a scheduled job.
     If user is provided, only processes for that user.
     """
-    user_id = UUID(user.user_id) if user else None
+    user_id = firebase_uid_to_uuid(user.user_id) if user else None
     delivered = await service.process_pending_nudges(user_id, limit)
     return {"status": "processed", "delivered": delivered, "count": len(delivered)}
 
@@ -190,7 +191,7 @@ async def compute_signal(
     Compute daily signal for a user.
     This aggregates spending data needed for nudge rule evaluation.
     """
-    signal = await service.compute_daily_signal(UUID(user.user_id), as_of_date)
+    signal = await service.compute_daily_signal(firebase_uid_to_uuid(user.user_id), as_of_date)
     if not signal:
         return {"status": "no_data", "signal": None}
     return {"status": "computed", "signal": signal}
@@ -208,7 +209,7 @@ async def diagnose_moments(
     import logging
     logger = logging.getLogger(__name__)
     
-    user_uuid = UUID(user.user_id)
+    user_uuid = firebase_uid_to_uuid(user.user_id)
     logger.info(f"GET /moments/diagnose - user_id={user.user_id} (UUID: {user_uuid}), email={user.email}")
     
     # Check transactions

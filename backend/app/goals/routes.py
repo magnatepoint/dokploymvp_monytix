@@ -6,6 +6,8 @@ from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
+from app.core.user_id import firebase_uid_to_uuid
 from pydantic import BaseModel, Field, field_validator
 
 from app.auth.dependencies import get_current_user
@@ -39,15 +41,8 @@ def get_service(pool: Pool = Depends(get_db_pool)) -> GoalsService:
 
 
 def safe_user_id(user: AuthenticatedUser) -> UUID:
-    """Safely convert user_id string to UUID."""
-    try:
-        return UUID(user.user_id)
-    except (ValueError, TypeError) as e:
-        logger.error(f"Invalid user_id format: {user.user_id}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid user ID format: {str(e)}",
-        ) from e
+    """Convert Firebase UID to deterministic UUID for DB (goal tables use user_id UUID)."""
+    return firebase_uid_to_uuid(user.user_id)
 
 
 @router.get("/catalog", response_model=list[GoalCatalogItem], summary="Get goal catalog")

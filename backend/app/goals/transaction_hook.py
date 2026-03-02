@@ -27,11 +27,8 @@ async def process_transactions_for_goals(
     
     This should be called after transactions are enriched with categories.
     """
-    try:
-        user_uuid = UUID(user_id)
-    except (ValueError, TypeError):
-        logger.warning(f"Invalid user_id format: {user_id}")
-        return
+    from app.core.user_id import to_user_uuid
+    user_uuid = to_user_uuid(user_id)
 
     # Get enriched transactions that haven't been processed yet
     # We'll process transactions that were just enriched in this batch
@@ -65,7 +62,7 @@ async def process_transactions_for_goals(
             ORDER BY tf.txn_date DESC
             LIMIT 100
         """
-        params = (user_id, upload_id)
+        params = (user_uuid, upload_id)
     else:
         # Process recent transactions if no upload_id
         query = """
@@ -87,7 +84,7 @@ async def process_transactions_for_goals(
             ORDER BY tf.txn_date DESC
             LIMIT 50
         """
-        params = (user_id,)
+        params = (user_uuid,)
 
     rows = await conn.fetch(query, *params)
 
@@ -176,11 +173,8 @@ async def process_transaction_for_goals_by_id(
     Process a single transaction (e.g. manual) for goal updates.
     Fetches from vw_txn_effective which works for manual txns with txn_override.
     """
-    try:
-        user_uuid = UUID(user_id)
-    except (ValueError, TypeError):
-        logger.warning(f"Invalid user_id format for goal processing: {user_id}")
-        return []
+    from app.core.user_id import to_user_uuid
+    user_uuid = to_user_uuid(user_id)
 
     row = await conn.fetchrow(
         """
@@ -190,7 +184,7 @@ async def process_transaction_for_goals_by_id(
         WHERE txn_id = $1::uuid AND user_id = $2::uuid
         """,
         txn_id,
-        user_id,
+        user_uuid,
     )
     if not row:
         logger.debug(f"Transaction {txn_id} not found in vw_txn_effective for goal processing")

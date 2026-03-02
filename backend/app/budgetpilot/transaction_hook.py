@@ -38,7 +38,8 @@ async def refresh_budget_aggregate(
     so BudgetPilot can show actuals before a plan is chosen.
     Returns the updated aggregate or None if no data (no transactions and no plan).
     """
-    user_uuid = UUID(user_id)
+    from app.core.user_id import to_user_uuid
+    user_uuid = to_user_uuid(user_id)
     if month is None:
         month = date.today().replace(day=1)
     else:
@@ -150,11 +151,8 @@ async def process_transaction_for_budget_by_id(
     Refresh budget aggregate after a transaction is created/updated.
     Returns budget state for TransactionCreateResponse (actual_split, deviation, suggestion).
     """
-    try:
-        user_uuid = UUID(user_id)
-    except (ValueError, TypeError):
-        logger.warning(f"Invalid user_id for budget processing: {user_id}")
-        return None
+    from app.core.user_id import to_user_uuid
+    user_uuid = to_user_uuid(user_id)
 
     row = await conn.fetchrow(
         """
