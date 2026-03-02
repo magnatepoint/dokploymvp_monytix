@@ -1,8 +1,5 @@
 from datetime import datetime, timezone
 
-import jwt
-from jwt import InvalidTokenError
-
 from app.core.config import get_settings
 from app.auth.models import AuthenticatedUser
 
@@ -49,56 +46,12 @@ def decode_firebase_token(token: str) -> AuthenticatedUser:
     )
 
 
-def decode_supabase_jwt(token: str) -> AuthenticatedUser:
-    """Validate a Supabase JWT and return the parsed claims (legacy)."""
-
-    settings = get_settings()
-    if not settings.supabase_jwt_secret:
-        raise AuthTokenError("Supabase is not configured")
-
-    try:
-        payload = jwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
-            leeway=600,  # 10 minutes leeway for clock skew
-        )
-    except InvalidTokenError as exc:
-        raise AuthTokenError("Invalid Supabase JWT") from exc
-
-    claims = AuthenticatedUser(**payload)
-    _ensure_not_expired(claims.exp)
-    return claims
-
-
 def decode_auth_token(token: str) -> AuthenticatedUser:
-    """Validate token: try Firebase first, then Supabase (legacy)."""
+    """Validate Firebase ID token only. No Supabase fallback."""
     settings = get_settings()
-    errors: list[str] = []
-
-    # Try Firebase first if configured
-    if settings.firebase_project_id:
-        try:
-            return decode_firebase_token(token)
-        except AuthTokenError as e:
-            errors.append(f"Firebase: {e}")
-        except Exception as e:
-            errors.append(f"Firebase: {e!s}")
-
-    # Fall back to Supabase if configured
-    if settings.supabase_jwt_secret:
-        try:
-            return decode_supabase_jwt(token)
-        except AuthTokenError as e:
-            errors.append(f"Supabase: {e}")
-        except Exception as e:
-            errors.append(f"Supabase: {e!s}")
-
-    # Surface the first provider's error so client/logs show why (e.g. "Firebase: Invalid Firebase token")
-    if errors:
-        raise AuthTokenError(errors[0] if len(errors) == 1 else f"{errors[0]} (then {errors[1]})")
-    raise AuthTokenError("No auth provider configured (set FIREBASE_PROJECT_ID or SUPABASE_JWT_SECRET)")
+    if not settings.firebase_project_id:
+        raise AuthTokenError("Firebase is not configured (set FIREBASE_PROJECT_ID and GOOGLE_CREDENTIALS_JSON)")
+    return decode_firebase_token(token)
 
 
 def _ensure_not_expired(exp_timestamp: int) -> None:

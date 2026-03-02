@@ -10,6 +10,8 @@ import kotlinx.coroutines.tasks.await
 
 /**
  * Central Firebase Auth manager. Provides current user, ID token for API calls, and auth state.
+ * All backend API calls (BackendApi) must use [getIdToken] for the Authorization header;
+ * the backend validates this Firebase ID token and returns 200. Do not use Supabase session tokens.
  */
 object FirebaseAuthManager {
 

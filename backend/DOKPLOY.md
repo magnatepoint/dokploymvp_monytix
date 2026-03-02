@@ -35,12 +35,12 @@ In the **Environment** tab, add these variables (Dokploy creates a `.env` file):
 | `SUPABASE_URL` | Yes | Supabase project URL |
 | `SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key |
-| `SUPABASE_JWT_SECRET` | Yes | Supabase JWT secret (for signing tokens) |
+| `SUPABASE_JWT_SECRET` | No | Supabase JWT secret (only for Gmail OAuth state signing if using Gmail; API auth is Firebase only) |
 | `FRONTEND_ORIGIN` | Yes | Frontend URL for CORS. Use full URL: `https://mvp1.monytix.ai` or `https://app.yourdomain.com` (hostname-only values like `mvp1.monytix.ai` are auto-prefixed with `https://`) |
 | `ENVIRONMENT` | No | Default: `production` |
 | `APP_PORT` | No | Host port (default: `8001`) |
 
-**Firebase Auth (required for mobile app):** The Android/iOS app sends a Firebase ID token in `Authorization: Bearer <token>`. The backend must validate it using the **Firebase** service account (not the Gmail one). Set **both**:
+**Firebase Auth (required – API uses only Firebase):** All API auth is via Firebase ID tokens; there is no Supabase JWT fallback. The Android/iOS app sends a Firebase ID token in `Authorization: Bearer <token>`. Set **both**:
 
 - `FIREBASE_PROJECT_ID` – same as in your app's `google-services.json` (e.g. `monytix-79dac`)
 - **`GOOGLE_CREDENTIALS_JSON`** – the **entire** Firebase Admin SDK JSON (e.g. contents of `monytix-79dac-firebase-adminsdk-....json`) as a **single-line string** in this variable.

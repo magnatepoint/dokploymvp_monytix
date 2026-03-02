@@ -65,16 +65,14 @@ class Settings(BaseSettings):
     def ensure_auth_configured(self) -> "Settings":
         if not self.auth_is_configured:
             raise ValueError(
-                "At least one auth provider must be configured. "
-                "Set FIREBASE_PROJECT_ID (and GOOGLE_APPLICATION_CREDENTIALS) for Firebase, "
-                "or SUPABASE_JWT_SECRET for Supabase."
+                "Firebase auth is required. Set FIREBASE_PROJECT_ID and GOOGLE_CREDENTIALS_JSON."
             )
         return self
 
     @property
     def auth_is_configured(self) -> bool:
-        """True if at least one auth provider (Firebase or Supabase) is configured."""
-        return bool(self.firebase_project_id or self.supabase_jwt_secret)
+        """True if Firebase auth is configured (API uses Firebase ID tokens only)."""
+        return bool(self.firebase_project_id)
 
     @property
     def gmail_is_configured(self) -> bool:

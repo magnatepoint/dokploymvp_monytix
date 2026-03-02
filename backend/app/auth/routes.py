@@ -23,10 +23,10 @@ async def login(payload: LoginRequest) -> LoginResponse:
     return await service.sign_in_with_password(payload)
 
 
-@router.get("/session", response_model=SessionResponse, summary="Validate session (Firebase or Supabase)")
+@router.get("/session", response_model=SessionResponse, summary="Validate Firebase session")
 async def session(user: AuthenticatedUser = Depends(get_current_user)) -> SessionResponse:
-    """Validate the provided JWT (Firebase ID token or Supabase JWT) and return user_id, email, role.
-    Used by clients to confirm auth and get canonical user_id for Postgres/Storage (same id for Firebase uid)."""
+    """Validate the Firebase ID token and return user_id, email, role.
+    Used by clients to confirm auth and get canonical user_id for Postgres/Storage (Firebase uid)."""
 
     return SessionResponse(
         user_id=user.user_id,

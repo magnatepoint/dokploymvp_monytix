@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
 
 
 class LoginRequest(BaseModel):
@@ -23,7 +23,9 @@ class LoginResponse(BaseModel):
 
 
 class AuthenticatedUser(BaseModel):
-    """User claims extracted from a Supabase JWT."""
+    """User claims extracted from a Firebase ID token (decoded payload may have 'user_id' or 'sub')."""
+
+    model_config = ConfigDict(populate_by_name=True)
 
     user_id: str = Field(..., alias="sub")
     email: EmailStr | None = None
@@ -34,7 +36,7 @@ class AuthenticatedUser(BaseModel):
 
 
 class SessionResponse(BaseModel):
-    """Payload returned after validating JWT (Firebase or Supabase). Keys must match clients (e.g. Android)."""
+    """Payload returned after validating Firebase ID token. Keys must match clients (e.g. Android)."""
 
     user_id: str
     email: EmailStr | None = None

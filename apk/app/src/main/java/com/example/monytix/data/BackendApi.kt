@@ -117,7 +117,7 @@ object BackendApi {
         }
     }
 
-    /** Proxy login via backend when Supabase is unreachable (e.g. blocked on mobile data). */
+    /** Legacy: proxy email/password login via backend (Supabase). Prefer Firebase Auth; use FirebaseAuthManager.getIdToken() for all other API calls. */
     suspend fun login(email: String, password: String): Result<LoginResponse> = withContext(Dispatchers.IO) {
         runWithFallback("$baseUrl/auth/login", "$backupBaseUrl/auth/login") { url ->
             client.post(url) {
