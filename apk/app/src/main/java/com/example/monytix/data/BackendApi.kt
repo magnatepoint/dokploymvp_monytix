@@ -43,7 +43,7 @@ object BackendApi {
     }
 
     private val baseUrl = BuildConfig.BACKEND_URL.trimEnd('/')
-    private val backupBaseUrl = "https://backend.monytix.ai".trimEnd('/')
+    private val backupBaseUrl = "https://api.monytix.ai".trimEnd('/')
     private val spendsenseBase = "$baseUrl/v1/spendsense"
     private val moneymomentsBase = "$baseUrl/v1/moneymoments"
     private val budgetBase = "$baseUrl/v1/budget"
@@ -92,7 +92,28 @@ object BackendApi {
 
     suspend fun getSession(accessToken: String): Result<SessionResponse> = withContext(Dispatchers.IO) {
         runWithFallback("$baseUrl/auth/session", "$backupBaseUrl/auth/session") { url ->
-            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<SessionResponse>()
+            val response = client.get(url) { header("Authorization", "Bearer $accessToken") }
+            if (response.status.value !in 200..299) {
+                val msg = when (response.status.value) {
+                    401 -> {
+                        val body = runCatching { response.bodyAsText() }.getOrNull().orEmpty()
+                        if (body.contains("\"detail\"")) {
+                            runCatching {
+                                val elem = Json.parseToJsonElement(body)
+                                val obj = elem as? kotlinx.serialization.json.JsonObject ?: return@runCatching null
+                                val d = obj["detail"]
+                                when (d) {
+                                    is kotlinx.serialization.json.JsonPrimitive -> d.content
+                                    else -> null
+                                }
+                            }.getOrNull()?.takeIf { it.isNotBlank() } ?: "Unauthorized. Please sign out and sign in again."
+                        } else "Unauthorized. Please sign out and sign in again."
+                    }
+                    else -> "Session failed: ${response.status}"
+                }
+                throw Exception(msg)
+            }
+            response.body<SessionResponse>()
         }
     }
 
@@ -141,9 +162,25 @@ object BackendApi {
                 })
                 pdfPassword?.let { append("password", it) }
             }
-            client.submitFormWithBinaryData(url = url, formData = parts) {
+            val response = client.submitFormWithBinaryData(url = url, formData = parts) {
                 header("Authorization", "Bearer $accessToken")
-            }.body<UploadBatchResponse>()
+            }
+            if (response.status.value !in 200..299) {
+                val msg = when (response.status.value) {
+                    401 -> "Unauthorized. Please sign out and sign in again."
+                    else -> "Upload failed: ${response.status}"
+                }
+                throw Exception(msg)
+            }
+            try {
+                response.body<UploadBatchResponse>()
+            } catch (e: Exception) {
+                // Backend returned 2xx but body is not UploadBatchResponse (e.g. proxy returns 200 with error body)
+                if (e.message?.contains("upload_id") == true || e.cause?.message?.contains("upload_id") == true) {
+                    throw Exception("Upload failed. Please sign out and sign in again, then retry.")
+                }
+                throw e
+            }
         }.also { r -> if (r.isSuccess) Log.d("MonytixUpload", "BackendApi.uploadStatement: success batch_id=${r.getOrNull()?.upload_id}") else Log.e("MonytixUpload", "BackendApi.uploadStatement: exception", r.exceptionOrNull()) }
     }
 

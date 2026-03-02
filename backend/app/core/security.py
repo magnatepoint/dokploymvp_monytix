@@ -28,7 +28,7 @@ def decode_firebase_token(token: str) -> AuthenticatedUser:
 
         decoded = firebase_auth.verify_id_token(token, check_revoked=True)
     except Exception as exc:
-        raise AuthTokenError("Invalid Firebase token") from exc
+        raise AuthTokenError(f"Invalid Firebase token: {exc!s}") from exc
 
     # Firebase token: sub=uid, email, email_verified, etc.
     user_id = decoded.get("sub") or decoded.get("user_id")
@@ -75,22 +75,30 @@ def decode_supabase_jwt(token: str) -> AuthenticatedUser:
 def decode_auth_token(token: str) -> AuthenticatedUser:
     """Validate token: try Firebase first, then Supabase (legacy)."""
     settings = get_settings()
+    errors: list[str] = []
 
     # Try Firebase first if configured
     if settings.firebase_project_id:
         try:
             return decode_firebase_token(token)
-        except AuthTokenError:
-            pass
+        except AuthTokenError as e:
+            errors.append(f"Firebase: {e}")
+        except Exception as e:
+            errors.append(f"Firebase: {e!s}")
 
     # Fall back to Supabase if configured
     if settings.supabase_jwt_secret:
         try:
             return decode_supabase_jwt(token)
-        except AuthTokenError:
-            pass
+        except AuthTokenError as e:
+            errors.append(f"Supabase: {e}")
+        except Exception as e:
+            errors.append(f"Supabase: {e!s}")
 
-    raise AuthTokenError("Invalid or unsupported token")
+    # Surface the first provider's error so client/logs show why (e.g. "Firebase: Invalid Firebase token")
+    if errors:
+        raise AuthTokenError(errors[0] if len(errors) == 1 else f"{errors[0]} (then {errors[1]})")
+    raise AuthTokenError("No auth provider configured (set FIREBASE_PROJECT_ID or SUPABASE_JWT_SECRET)")
 
 
 def _ensure_not_expired(exp_timestamp: int) -> None:

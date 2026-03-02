@@ -40,6 +40,13 @@ In the **Environment** tab, add these variables (Dokploy creates a `.env` file):
 | `ENVIRONMENT` | No | Default: `production` |
 | `APP_PORT` | No | Host port (default: `8001`) |
 
+**Firebase Auth (required for mobile app):** The Android/iOS app sends a Firebase ID token in `Authorization: Bearer <token>`. The backend must validate it using the **Firebase** service account (not the Gmail one). Set **both**:
+
+- `FIREBASE_PROJECT_ID` – same as in your app's `google-services.json` (e.g. `monytix-79dac`)
+- **`GOOGLE_CREDENTIALS_JSON`** – the **entire** Firebase Admin SDK JSON (e.g. contents of `monytix-79dac-firebase-adminsdk-....json`) as a **single-line string** in this variable.
+
+**Important:** Do **not** put the Firebase JSON in `GOOGLE_APPLICATION_CREDENTIALS`. That variable must be a **file path**. The backend reads `GOOGLE_CREDENTIALS_JSON`, writes it to a temp file, and sets the path for the Firebase SDK. If you only set `GOOGLE_APPLICATION_CREDENTIALS=./gmail-pubsub-key.json`, the backend will use the Gmail key for Firebase and token verification will fail with "Invalid or unsupported token". Use **`GOOGLE_CREDENTIALS_JSON`** for the Firebase service account so auth works.
+
 **Optional (Gmail integration):** `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REDIRECT_URI`. If omitted, Gmail routes return 503. See `.env.production.example`.
 
 ### 3. Configure Domain (Optional)
@@ -113,6 +120,19 @@ nixpacks build . -o backend.tar
 
 - Ensure Redis is healthy (check Logs for `mvp-redis`)
 - Verify `CELERY_BROKER_URL` and `REDIS_URL` resolve to `redis://redis:6379/0` (redis = service name)
+
+### 401 "Invalid or unsupported token" or "Invalid Firebase token" on `/auth/session`
+
+The mobile app uses **Firebase Auth** and sends a Firebase ID token. The backend must have:
+
+1. **`FIREBASE_PROJECT_ID`** set to the same project as the app (e.g. `monytix-79dac` from `google-services.json`).
+2. **Firebase Admin credentials** via **`GOOGLE_CREDENTIALS_JSON`**: the **entire** Firebase service account JSON as a **single-line** string (no real newlines). Many dashboards truncate or break multiline values, so minify the JSON first:
+   - In a terminal: `cat monytix-79dac-firebase-adminsdk-fbsvc-*.json | jq -c .` (or use an online JSON minifier), then paste the single line into `GOOGLE_CREDENTIALS_JSON`.
+   - Or paste the JSON in a single line with `\n` for newlines inside the `private_key` string.
+
+After deploy, check **backend logs** on startup:
+- You should see: `Firebase credentials loaded from GOOGLE_CREDENTIALS_JSON (project=monytix-79dac)`.
+- If you see `Failed to process GOOGLE_CREDENTIALS_JSON: ...`, the value was truncated or invalid; fix the JSON and redeploy.
 
 ### Domain not resolving
 

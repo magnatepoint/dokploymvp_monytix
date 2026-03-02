@@ -1,8 +1,11 @@
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 from pydantic import AnyHttpUrl, BeforeValidator, Field, PostgresDsn, RedisDsn, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -93,32 +96,32 @@ def get_settings() -> Settings:
     try:
         settings = Settings()
         
-        # Handle GOOGLE_CREDENTIALS_JSON -> GOOGLE_APPLICATION_CREDENTIALS file
+        # Handle GOOGLE_CREDENTIALS_JSON -> GOOGLE_APPLICATION_CREDENTIALS file (for Firebase)
         if settings.google_credentials_json:
             import json
-            import tempfile
             import os
-            
+            import tempfile
+
             try:
-                # Validate JSON first
-                creds_dict = json.loads(settings.google_credentials_json)
-                
-                # Write to specific temp file so it persists for this run
-                # Using /tmp/gcp_creds.json or similar could be risky if concurrent runs,
-                # but valid for container usage.
-                # Safer: NamedTemporaryFile with delete=False
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+                # Minify: strip whitespace so multiline paste still parses
+                raw = settings.google_credentials_json.strip()
+                creds_dict = json.loads(raw)
+                project = creds_dict.get("project_id", "?")
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
                     json.dump(creds_dict, tmp)
                     tmp_path = tmp.name
-                
                 settings.google_application_credentials = tmp_path
-                # Set env var for Google client libraries that read os.environ directly
                 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp_path
-                
+                logger.info(
+                    "Firebase credentials loaded from GOOGLE_CREDENTIALS_JSON (project=%s)",
+                    project,
+                )
             except Exception as e:
-                # Log invalid JSON but don't crash app startup immediately?
-                # Or maybe we should crash. For now, print error.
-                print(f"WARNING: Failed to process GOOGLE_CREDENTIALS_JSON: {e}")
+                logger.warning(
+                    "Failed to process GOOGLE_CREDENTIALS_JSON: %s. "
+                    "Firebase auth may use GOOGLE_APPLICATION_CREDENTIALS path instead.",
+                    e,
+                )
 
         return settings
     except ValidationError as exc:  # pragma: no cover - startup validation helper

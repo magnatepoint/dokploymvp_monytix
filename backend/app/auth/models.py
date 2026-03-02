@@ -34,7 +34,7 @@ class AuthenticatedUser(BaseModel):
 
 
 class SessionResponse(BaseModel):
-    """Payload returned after validating Supabase JWT."""
+    """Payload returned after validating JWT (Firebase or Supabase). Keys must match clients (e.g. Android)."""
 
     user_id: str
     email: EmailStr | None = None
