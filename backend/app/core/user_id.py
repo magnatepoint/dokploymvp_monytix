@@ -16,8 +16,10 @@ def firebase_uid_to_uuid(uid: str) -> UUID:
     return uuid5(_FIREBASE_UID_NAMESPACE, f"firebase:{uid}")
 
 
-def to_user_uuid(user_id: str) -> UUID:
-    """Convert user_id string to UUID: parse as UUID if valid, else treat as Firebase UID."""
+def to_user_uuid(user_id: str | UUID) -> UUID:
+    """Convert user_id to UUID: pass-through if already UUID; else parse or treat as Firebase UID."""
+    if isinstance(user_id, UUID):
+        return user_id
     try:
         return UUID(user_id)
     except (ValueError, TypeError):
