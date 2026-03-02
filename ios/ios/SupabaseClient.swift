@@ -9,8 +9,8 @@ import Foundation
 
 // API configuration
 struct APIConfig {
-    static let baseURL = "https://api.monytix.ai"
-    static let backupBaseURL = "https://backend.monytix.ai"
+    static let baseURL = "https://backend.monytix.ai"
+    static let backupBaseURL = "https://api.monytix.ai"
 }
 
 // API Error types

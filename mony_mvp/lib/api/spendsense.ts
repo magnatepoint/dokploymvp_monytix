@@ -12,7 +12,7 @@ import type {
 } from '@/types/spendsense'
 import type { InsightsResponse } from '@/types/console'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.monytix.ai'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai'
 
 // Fetch KPIs from backend
 export async function fetchKPIs(session: Session, month?: string): Promise<SpendSenseKPIs> {

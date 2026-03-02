@@ -27,7 +27,7 @@ android {
         } else null
         val backendUrl = props?.getProperty("BACKEND_URL")
             ?: if (project.hasProperty("ciRelease")) null
-            else "https://api.monytix.ai"
+            else "https://backend.monytix.ai"
         if (project.hasProperty("ciRelease") && backendUrl.isNullOrBlank()) {
             throw GradleException(
                 "CI release build requires BACKEND_URL in local.properties or env. " +

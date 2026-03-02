@@ -8,6 +8,7 @@ import asyncpg
 from asyncpg import Pool
 
 from app.core.config import get_settings
+from app.core.user_id import to_user_uuid
 from .models import (
     AccountItem,
     SourceType,
@@ -61,6 +62,7 @@ class SpendSenseService:
             month: Optional month filter in YYYY-MM format (e.g., '2025-11'). 
                    If None, returns latest available month.
         """
+        user_id = to_user_uuid(user_id)
         # First, check if user has any transactions at all
         # This prevents showing stale data from materialized views after deletion
         transaction_count = await self._pool.fetchval(
@@ -121,6 +123,7 @@ class SpendSenseService:
             user_id: User ID
             target_month: Optional target month. If None, uses latest available month.
         """
+        user_id = to_user_uuid(user_id)
         from datetime import date
         
         # Determine which month to use
@@ -352,6 +355,7 @@ class SpendSenseService:
         )
 
     async def _fetch_prev_month_category_spend(self, user_id: str, current_month: date | None) -> dict[str, float]:
+        user_id = to_user_uuid(user_id)
         if not current_month:
             return {}
         # Calculate previous month
@@ -574,6 +578,7 @@ class SpendSenseService:
         return ((current_value - baseline) / abs(baseline)) * 100.0
 
     async def _fetch_recent_loot_drop(self, user_id: str) -> LootDropSummary | None:
+        user_id = to_user_uuid(user_id)
         row = await self._pool.fetchrow(
             """
             SELECT upload_id,
@@ -641,6 +646,7 @@ class SpendSenseService:
         if not filename:
             raise SpendSenseParseError("Filename is required")
 
+        user_id = to_user_uuid(user_id)
         file_size = len(file_bytes)
         logger.info(f"Enqueueing file ingest: user_id={user_id}, filename={filename}, size={file_size} bytes, has_password={bool(pdf_password)}")
 
@@ -693,6 +699,7 @@ class SpendSenseService:
 
     async def get_batch_status(self, batch_id: str, user_id: str) -> UploadBatch | None:
         """Get the current status of an upload batch."""
+        user_id = to_user_uuid(user_id)
         query = """
         SELECT upload_id, user_id, source_type, status, received_at,
                (error_json->>'error')::text AS error_message
@@ -724,6 +731,7 @@ class SpendSenseService:
         bank_code: str | None = None,
     ) -> tuple[str, list[Any]]:
         """Build WHERE clause and params for transaction list/summary. Returns (where_sql, params)."""
+        user_id = to_user_uuid(user_id) if isinstance(user_id, str) else user_id
         where_clauses = ["v.user_id = $1"]
         params: list[Any] = [user_id]
         placeholder = 2
@@ -788,6 +796,7 @@ class SpendSenseService:
         **kwargs: Any,
     ) -> tuple[List[TransactionRecord], int]:
         """List transactions with pagination and optional filters."""
+        user_id = to_user_uuid(user_id)
         where_sql, params = self._build_transaction_where(
             user_id,
             search=search,
@@ -907,6 +916,7 @@ class SpendSenseService:
         bank_code: str | None = None,
     ) -> tuple[float, float, int, int]:
         """Return (debit_total, credit_total, debit_count, credit_count) for the given filters."""
+        user_id = to_user_uuid(user_id)
         where_sql, params = self._build_transaction_where(
             user_id,
             search=search,
@@ -954,6 +964,7 @@ class SpendSenseService:
         Preserves:
         - Custom categories/subcategories (user-created taxonomy) - kept so users can reuse them
         """
+        user_id = to_user_uuid(user_id)
         counts: dict[str, int] = {}
         
         # Helper to safely execute DELETE and extract count
@@ -1087,6 +1098,8 @@ class SpendSenseService:
         
         The account cannot be reactivated.
         """
+        auth_uid = user_id  # Keep original for Firebase/Supabase auth delete
+        user_id = to_user_uuid(user_id)
         # Delete all user data first (this preserves custom categories)
         deleted_counts = await self.delete_all_user_data(user_id)
         
@@ -1163,12 +1176,12 @@ class SpendSenseService:
         deleted_counts["custom_subcategories_anonymized"] = custom_subcat_anon_count
         deleted_counts["custom_subcategories_deleted_conflicts"] = custom_subcat_conflicts
         
-        # Delete auth account (Firebase or Supabase) so they can re-register
+        # Delete auth account (Firebase or Supabase) so they can re-register (use original auth UID)
         auth_deleted = False
         settings = __import__("app.core.config", fromlist=["get_settings"]).get_settings()
 
         # Firebase UIDs have no hyphens; Supabase uses UUIDs (with hyphens)
-        is_firebase_uid = "-" not in user_id and 1 <= len(user_id) <= 128
+        is_firebase_uid = "-" not in auth_uid and 1 <= len(auth_uid) <= 128
 
         if is_firebase_uid and settings.firebase_project_id:
             try:
@@ -1177,16 +1190,16 @@ class SpendSenseService:
 
                 if not firebase_admin._apps:
                     firebase_admin.initialize_app()
-                firebase_auth.delete_user(user_id)
+                firebase_auth.delete_user(auth_uid)
                 auth_deleted = True
-                logger.info(f"Deleted Firebase auth account for user {user_id}")
+                logger.info(f"Deleted Firebase auth account for user {auth_uid}")
             except Exception as e:
-                logger.error(f"Error deleting Firebase auth account for {user_id}: {e}")
+                logger.error(f"Error deleting Firebase auth account for {auth_uid}: {e}")
         elif settings.supabase_url and settings.supabase_service_role_key:
             try:
                 import httpx
 
-                url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
+                url = f"{settings.supabase_url}/auth/v1/admin/users/{auth_uid}"
                 headers = {
                     "Authorization": f"Bearer {settings.supabase_service_role_key}",
                     "apikey": settings.supabase_service_role_key,
@@ -1195,14 +1208,14 @@ class SpendSenseService:
                     response = await client.delete(url, headers=headers)
                     if response.status_code == 200:
                         auth_deleted = True
-                        logger.info(f"Deleted Supabase auth account for user {user_id}")
+                        logger.info(f"Deleted Supabase auth account for user {auth_uid}")
                     else:
                         logger.warning(
-                            f"Failed to delete Supabase auth account for {user_id}: "
+                            f"Failed to delete Supabase auth account for {auth_uid}: "
                             f"{response.status_code} {response.text}"
                         )
             except Exception as e:
-                logger.error(f"Error deleting Supabase auth account for {user_id}: {e}")
+                logger.error(f"Error deleting Supabase auth account for {auth_uid}: {e}")
         
         # Log deactivation (separate from deletion log)
         from app.core.audit import persist_audit, AuditAction
@@ -1216,7 +1229,7 @@ class SpendSenseService:
             },
         )
         
-        logger.info(f"Account deactivated for user {user_id} (auth_deleted={auth_deleted})")
+        logger.info(f"Account deactivated for user {auth_uid} (auth_deleted={auth_deleted})")
         return {
             "status": "deactivated",
             "message": (
@@ -1241,6 +1254,7 @@ class SpendSenseService:
         channel: str | None = None,
     ) -> TransactionRecord:
         """Update transaction category/subcategory via override."""
+        user_id = to_user_uuid(user_id)
         logger.info(
             f"update_transaction called: txn_id={txn_id}, user_id={user_id}, "
             f"category_code={category_code}, subcategory_code={subcategory_code}, "
@@ -1539,6 +1553,7 @@ class SpendSenseService:
         data: TransactionCreate,
     ) -> TransactionRecord:
         """Create a manual transaction."""
+        user_id = to_user_uuid(user_id)
         import uuid
         from datetime import datetime
         
@@ -1682,6 +1697,7 @@ class SpendSenseService:
 
     async def delete_transaction(self, user_id: str, txn_id: str) -> bool:
         """Delete a transaction. Returns True if deleted, False if not found."""
+        user_id = to_user_uuid(user_id)
         # Verify transaction belongs to user and delete
         query = """
         DELETE FROM spendsense.txn_fact
@@ -1693,6 +1709,8 @@ class SpendSenseService:
 
     async def get_categories(self, user_id: str | None = None) -> list[dict[str, str]]:
         """Get all active categories (system + user's custom)."""
+        if user_id:
+            user_id = to_user_uuid(user_id)
         if user_id:
             query = """
             SELECT category_code, category_name, is_custom, txn_type
@@ -1721,6 +1739,7 @@ class SpendSenseService:
 
     async def get_channels(self, user_id: str) -> list[str]:
         """Get distinct channel values for the user (from DB) plus standard options (cash, upi, etc.)."""
+        user_id = to_user_uuid(user_id)
         # Standard options always shown for manual entry and filters
         standard = ["cash", "upi", "neft", "imps", "card", "atm", "ach", "nach", "other"]
         try:
@@ -1751,6 +1770,8 @@ class SpendSenseService:
         self, category_code: str | None = None, user_id: str | None = None
     ) -> list[dict[str, str]]:
         """Get all active subcategories, optionally filtered by category."""
+        if user_id is not None:
+            user_id = to_user_uuid(user_id)
         if category_code:
             if user_id:
                 query = """
@@ -1804,6 +1825,7 @@ class SpendSenseService:
         txn_type: str = "wants",
     ) -> dict[str, str]:
         """Create a custom category for the user."""
+        user_id = to_user_uuid(user_id)
         # Get max display_order for user's custom categories
         max_order = await self._pool.fetchval(
             """
@@ -1841,6 +1863,7 @@ class SpendSenseService:
         category_code: str,
     ) -> dict[str, str]:
         """Create a custom subcategory for the user."""
+        user_id = to_user_uuid(user_id)
         # Verify category exists (system or user's custom)
         category_exists = await self._pool.fetchval(
             """
@@ -1891,6 +1914,7 @@ class SpendSenseService:
 
     async def re_enrich_transactions(self, user_id: str) -> int:
         """Delete existing enriched records and re-run enrichment with updated merchant rules."""
+        user_id = to_user_uuid(user_id)
         # Delete existing enriched records
         # Join through txn_parsed to get parsed_id from txn_fact.txn_id
         await self._pool.execute("""
@@ -1915,6 +1939,7 @@ class SpendSenseService:
 
     async def refresh_materialized_views(self, user_id: str) -> None:
         """Refresh materialized views for KPI calculations."""
+        user_id = to_user_uuid(user_id)
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
@@ -1926,6 +1951,7 @@ class SpendSenseService:
 
     async def get_available_months(self, user_id: str) -> list[str]:
         """Get list of available months with transaction data in YYYY-MM format."""
+        user_id = to_user_uuid(user_id)
         rows = await self._pool.fetch(
             """
             SELECT DISTINCT DATE_TRUNC('month', txn_date)::date AS month
@@ -1955,6 +1981,7 @@ class SpendSenseService:
 
     async def list_accounts(self, user_id: str) -> list[AccountItem]:
         """List accounts derived from transaction data (grouped by bank_code, account_ref)."""
+        user_id = to_user_uuid(user_id)
         rows = await self._pool.fetch(
             """
             SELECT
@@ -2000,7 +2027,7 @@ class SpendSenseService:
 
     async def get_insights(self, user_id: str, start_date: date | None = None, end_date: date | None = None) -> dict[str, Any]:
         """Get comprehensive insights including time-series, category breakdown, trends, and recurring transactions."""
-        
+        user_id = to_user_uuid(user_id)
         # Default to last 12 months if no date range provided
         if not end_date:
             end_date = date.today()

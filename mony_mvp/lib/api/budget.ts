@@ -11,7 +11,7 @@ import type {
   BudgetVarianceResponse,
 } from '@/types/budget'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.monytix.ai'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai'
 
 // Fetch budget recommendations
 export async function fetchBudgetRecommendations(

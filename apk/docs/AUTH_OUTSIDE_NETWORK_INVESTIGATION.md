@@ -47,7 +47,7 @@ So the blank screen is the **Custom Tab** content (Supabase/Google auth page) no
 
 ### 6. Backend URL only reachable on one network
 
-- After login, the app calls your **backend** (`BACKEND_URL`, e.g. `https://api.monytix.ai`). If that URL is only reachable on your office/home network, then **outside the network** the app might:
+- After login, the app calls your **backend** (`BACKEND_URL`, e.g. `https://backend.monytix.ai`). If that URL is only reachable on your office/home network, then **outside the network** the app might:
   - Still complete Supabase login (Custom Tab might close and app get the session).
   - Then fail on the first API call (e.g. `/auth/session` or `/health`), which can look like "login didn’t work".
 - So: if the **browser** tab is blank, the main suspect is 1–3 above. If the tab **does** close and the app opens but then shows an error or empty state, also verify `BACKEND_URL` is reachable from that network (or use a public URL and set it in `local.properties` and rebuild).
@@ -85,9 +85,9 @@ So the blank screen is the **Custom Tab** content (Supabase/Google auth page) no
 ### 7. Mobile data / carrier DNS issues
 
 - **Symptom**: Works on WiFi but fails on mobile data (4G/5G), VPN off.
-- **Cause**: Some mobile carriers block or misresolve domains (e.g. `supabase.co`, `api.monytix.ai`), or use DNS that blocks Cloudflare.
+- **Cause**: Some mobile carriers block or misresolve domains (e.g. `supabase.co`, `backend.monytix.ai`), or use DNS that blocks Cloudflare.
 - **Fix on Android**: Settings → Network & internet → Private DNS → set to `dns.google` or `one.one.one.one` (uses DNS over TLS, bypasses carrier DNS).
-- **Diagnostic**: On mobile data, open `https://api.monytix.ai/health` in Chrome. If it fails there too, it's a network/carrier issue.
+- **Diagnostic**: On mobile data, open `https://backend.monytix.ai/health` in Chrome. If it fails there too, it's a network/carrier issue.
 - **Debug logs**: Check `adb logcat -s BackendApi` for exact error. "Unable to resolve host" → DNS/ISP block; "Connection timed out" → firewall/carrier block.
 
 ### 8. Production: Custom domain for Supabase

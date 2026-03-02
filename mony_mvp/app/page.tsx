@@ -44,12 +44,12 @@ export default function Home() {
   }, [])
 
   const validateSessionWithBackend = async (session: Session) => {
-    const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.monytix.ai'
+    const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai'
     let API_BASE_URL = rawApiUrl.split('/').slice(0, 3).join('/')
     const urlObj = new URL(API_BASE_URL)
     const isWrongHostname = urlObj.hostname === 'mvp.monytix.ai' || urlObj.hostname.includes('mvp.monytix.ai')
-    if (isWrongHostname) API_BASE_URL = 'https://api.monytix.ai'
-    const BACKUP_URL = 'https://backend.monytix.ai'
+    if (isWrongHostname) API_BASE_URL = 'https://backend.monytix.ai'
+    const BACKUP_URL = 'https://api.monytix.ai'
 
     const tryValidate = async (base: string) => {
       const res = await fetch(`${base}/auth/session`, {

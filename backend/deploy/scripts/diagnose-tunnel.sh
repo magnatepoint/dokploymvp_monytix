@@ -74,20 +74,20 @@ echo ""
 
 # 5. Test external API access
 echo "5. Testing external API access..."
-if curl -s -f https://api.monytix.ai/health > /dev/null 2>&1; then
+if curl -s -f https://backend.monytix.ai/health > /dev/null 2>&1; then
     echo -e "${GREEN}✅ API is accessible externally${NC}"
-    curl -s https://api.monytix.ai/health | head -1
+    curl -s https://backend.monytix.ai/health | head -1
 else
     echo -e "${RED}❌ API is NOT accessible externally${NC}"
     echo "   Error details:"
-    curl -v https://api.monytix.ai/health 2>&1 | grep -E "(error|Error|HTTP|hostname)" | head -5
+    curl -v https://backend.monytix.ai/health 2>&1 | grep -E "(error|Error|HTTP|hostname)" | head -5
 fi
 
 echo ""
 
 # 6. Check DNS
-echo "6. Checking DNS resolution for api.monytix.ai..."
-DNS_RESULT=$(dig +short api.monytix.ai 2>/dev/null || echo "DNS lookup failed")
+echo "6. Checking DNS resolution for backend.monytix.ai..."
+DNS_RESULT=$(dig +short backend.monytix.ai 2>/dev/null || echo "DNS lookup failed")
 if [ -n "$DNS_RESULT" ] && [ "$DNS_RESULT" != "DNS lookup failed" ]; then
     echo -e "${GREEN}✅ DNS resolves: $DNS_RESULT${NC}"
 else
@@ -115,7 +115,7 @@ echo ""
 echo "If API is not accessible:"
 echo "1. Check Cloudflare Dashboard → Zero Trust → Tunnels"
 echo "2. Verify tunnel 'mvp-backend-tunnel' is active and connected"
-echo "3. Verify DNS CNAME record: api.monytix.ai → <tunnel-hostname>"
+echo "3. Verify DNS CNAME record: backend.monytix.ai → <tunnel-hostname>"
 echo "4. Check tunnel logs for connection errors:"
 echo "   docker logs $CONTAINER_NAME --tail 100"
 echo ""

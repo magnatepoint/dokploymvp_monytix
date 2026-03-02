@@ -1,7 +1,7 @@
 import type { Session } from '@supabase/supabase-js'
 
 // Validate API URL - should not contain paths like /auth/callback
-const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.monytix.ai'
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai'
 let API_BASE_URL = rawApiUrl.split('/').slice(0, 3).join('/') // Remove any paths, keep only protocol://host
 // Ensure no trailing slash
 API_BASE_URL = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL
@@ -15,10 +15,10 @@ const hasPath = rawApiUrl !== API_BASE_URL
 if (isWrongHostname) {
   console.error('[API] ⚠️ CRITICAL: NEXT_PUBLIC_API_URL points to frontend domain instead of API domain!')
   console.error('[API] Current value:', rawApiUrl)
-  console.error('[API] Using fallback: https://api.monytix.ai')
+  console.error('[API] Using fallback: https://backend.monytix.ai')
   console.error('[API] Fix in Cloudflare Pages → Settings → Environment Variables')
-  console.error('[API] Set NEXT_PUBLIC_API_URL to: https://api.monytix.ai')
-  API_BASE_URL = 'https://api.monytix.ai'
+  console.error('[API] Set NEXT_PUBLIC_API_URL to: https://backend.monytix.ai')
+  API_BASE_URL = 'https://backend.monytix.ai'
 } else if (hasPath) {
   console.warn('[API] ⚠️ NEXT_PUBLIC_API_URL contains a path (auto-stripped)')
   console.warn('[API] Current value:', rawApiUrl)
@@ -28,7 +28,7 @@ if (isWrongHostname) {
 
 const REQUEST_TIMEOUT = 45000 // 45 seconds (Overview KPIs/insights can be slow with large datasets)
 
-export const BACKUP_API_BASE_URL = 'https://backend.monytix.ai'
+export const BACKUP_API_BASE_URL = 'https://api.monytix.ai'
 
 function isRetryableWithBackup(error: any): boolean {
   if (error?.status && error.status >= 500) return true

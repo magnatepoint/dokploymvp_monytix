@@ -2,6 +2,9 @@
 # Note: build-essential removed to save ~336MB during build (all deps use pre-built wheels)
 FROM python:3.11-slim as builder
 
+# Set INSTALL_ML=0 for low-disk VMs (skips scipy/scikit-learn ~45MB; app has fallback)
+ARG INSTALL_ML=1
+
 WORKDIR /app
 
 # Copy dependency files (split to reduce peak disk during build)
@@ -12,8 +15,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements-core.txt && rm -rf /tmp/* /root/.cache/*
 RUN pip install --no-cache-dir -r requirements-data1.txt && rm -rf /tmp/* /root/.cache/*
 RUN pip install --no-cache-dir -r requirements-data2.txt && rm -rf /tmp/* /root/.cache/*
-RUN pip install --no-cache-dir -r requirements-ml1.txt && rm -rf /tmp/* /root/.cache/*
-RUN pip install --no-cache-dir -r requirements-ml2.txt && rm -rf /tmp/* /root/.cache/*
+RUN if [ "$INSTALL_ML" = "1" ]; then pip install --no-cache-dir -r requirements-ml1.txt && rm -rf /tmp/* /root/.cache/* && pip install --no-cache-dir -r requirements-ml2.txt && rm -rf /tmp/* /root/.cache/*; fi
 RUN pip install --no-cache-dir -r requirements-google.txt && rm -rf /tmp/* /root/.cache/*
 
 # Production stage

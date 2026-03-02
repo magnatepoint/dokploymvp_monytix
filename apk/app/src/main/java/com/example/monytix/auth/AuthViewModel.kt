@@ -214,7 +214,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val webClientId = appContext.getString(R.string.default_web_client_id)
                 val googleIdOption = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(true)
+                    .setFilterByAuthorizedAccounts(false)  // Allow "Add another account" and any device account
                     .setServerClientId(webClientId)
                     .build()
                 val request = GetCredentialRequest.Builder()

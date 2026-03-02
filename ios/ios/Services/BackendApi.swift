@@ -8,8 +8,8 @@
 import Foundation
 
 enum BackendConfig {
-    static let defaultBaseUrl = "https://api.monytix.ai"
-    static let backupBaseUrl = "https://backend.monytix.ai"
+    static let defaultBaseUrl = "https://backend.monytix.ai"
+    static let backupBaseUrl = "https://api.monytix.ai"
 }
 
 @MainActor

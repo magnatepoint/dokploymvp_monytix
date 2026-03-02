@@ -142,7 +142,7 @@ export default function ManualTransactionModal({
       const isNetworkError = err instanceof Error && (err as any).isNetworkError
       setError(
         isNetworkError && message.includes('Unable to reach')
-          ? `${message} If you're running locally, ensure the backend is running and NEXT_PUBLIC_API_URL points to it (e.g. https://api.monytix.ai).`
+          ? `${message} If you're running locally, ensure the backend is running and NEXT_PUBLIC_API_URL points to it (e.g. https://backend.monytix.ai).`
           : message
       )
     } finally {
