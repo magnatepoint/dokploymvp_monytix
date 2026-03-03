@@ -1,6 +1,6 @@
 'use client'
 
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import type { MoneyMoment } from '@/types/moneymoments'
 import MoneyMomentCard from '../components/MoneyMomentCard'
 import HabitCard from '../components/HabitCard'

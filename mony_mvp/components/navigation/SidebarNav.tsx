@@ -1,7 +1,7 @@
 'use client'
 
 import type { Screen } from '@/app/page'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 
 interface SidebarNavProps {
   currentScreen: Screen

@@ -2,7 +2,7 @@
 
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import type { Screen } from '@/app/page'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import BottomNavBar from './BottomNavBar'
 import SidebarNav from './SidebarNav'
 

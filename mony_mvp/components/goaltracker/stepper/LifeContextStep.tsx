@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import type { LifeContextRequest } from '@/types/goals'
 import { INDIAN_STATES } from '@/types/goals'
 import { glassFilter } from '@/lib/theme/glass'

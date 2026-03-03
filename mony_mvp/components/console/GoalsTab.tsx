@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { fetchGoals, transformGoals } from '@/lib/api/console'
 import type { Goal } from '@/types/console'
 import { glassCardPrimary } from '@/lib/theme/glass'

@@ -1,4 +1,4 @@
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai'
 const UPLOAD_TIMEOUT = 60000 // 60 seconds for file uploads
@@ -25,10 +25,11 @@ export async function fetchBatchStatus(
   session: Session,
   batchId: string
 ): Promise<UploadBatch> {
+  const token = await session.getValidToken()
   const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL
   const url = `${baseUrl}/v1/spendsense/batches/${batchId}`
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${session.access_token}` },
+    headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
@@ -46,8 +47,9 @@ export async function uploadStatementFile(
   password?: string,
   onProgress?: (progress: UploadProgress) => void
 ): Promise<UploadBatch> {
-  // Validate session
-  if (!session?.access_token) {
+  // Validate session and get Firebase ID token
+  const token = await session.getValidToken()
+  if (!token) {
     throw new Error('Authentication required. Please log in again.')
   }
 
@@ -219,7 +221,7 @@ export async function uploadStatementFile(
     // Set up request
     try {
       xhr.open('POST', endpoint)
-      xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`)
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`)
       
       // Send request
       xhr.send(formData)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { updateTransaction } from '@/lib/api/spendsense'
 import UncategorizedTransactions from '../uncategorized/UncategorizedTransactions'
 import { glassCardPrimary, glassCardSecondary } from '@/lib/theme/glass'

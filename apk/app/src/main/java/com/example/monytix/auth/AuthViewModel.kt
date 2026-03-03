@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.monytix.R
 import com.example.monytix.analytics.AnalyticsHelper
+import com.example.monytix.data.BackendApi
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.FirebaseException
@@ -19,8 +20,10 @@ import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.PhoneAuthCredential
 import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.auth.PhoneAuthProvider
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -170,6 +173,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 auth.signInWithEmailAndPassword(email, password).await()
+                val token = auth.currentUser?.getIdToken(false)?.await()?.token
+                if (token != null) {
+                    SecureTokenStorage.saveAfterLogin(appContext, token, email, password)
+                }
                 AnalyticsHelper.logEvent("sign_in_email", mapOf("method" to "email"))
                 _uiState.update { it.copy(isLoading = false, error = null) }
             } catch (e: Exception) {
@@ -188,6 +195,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isLoading = true, error = null, signUpSuccess = false) }
             try {
                 auth.createUserWithEmailAndPassword(email, password).await()
+                val token = auth.currentUser?.getIdToken(false)?.await()?.token
+                if (token != null) {
+                    SecureTokenStorage.saveAfterLogin(appContext, token, email, password)
+                }
                 AnalyticsHelper.logEvent("sign_up_email", mapOf("method" to "email"))
                 _uiState.update {
                     it.copy(
@@ -265,5 +276,50 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearError() {
         _uiState.update { it.copy(error = null, signUpSuccess = false) }
+    }
+
+    /**
+     * Sign in using credentials stored after a previous email/password login.
+     * Validates the stored token with the backend; if invalid/expired, clears storage and forces password re-entry.
+     */
+    fun signInWithStoredToken() {
+        viewModelScope.launch {
+            val creds = SecureTokenStorage.getStoredCredentials(appContext)
+            val token = SecureTokenStorage.getStoredToken(appContext)
+            if (creds == null || token.isNullOrBlank()) {
+                _uiState.update { it.copy(error = appContext.getString(R.string.auth_biometric_session_expired)) }
+                return@launch
+            }
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            try {
+                val sessionResult = withContext(Dispatchers.IO) { BackendApi.getSession(token) }
+                sessionResult.onFailure {
+                    SecureTokenStorage.clear(appContext)
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = appContext.getString(R.string.auth_biometric_session_expired)
+                        )
+                    }
+                    return@launch
+                }
+                val (email, password) = creds
+                auth.signInWithEmailAndPassword(email, password).await()
+                val newToken = auth.currentUser?.getIdToken(false)?.await()?.token
+                if (newToken != null) {
+                    SecureTokenStorage.saveAfterLogin(appContext, newToken, email, password)
+                }
+                AnalyticsHelper.logEvent("sign_in_biometric", mapOf("method" to "biometric"))
+                _uiState.update { it.copy(isLoading = false, error = null) }
+            } catch (e: Exception) {
+                SecureTokenStorage.clear(appContext)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = appContext.getString(R.string.auth_biometric_session_expired)
+                    )
+                }
+            }
+        }
     }
 }

@@ -49,7 +49,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -78,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.monytix.R
 import com.example.monytix.data.AccountItemResponse
+import com.example.monytix.ui.MonytixSpinner
 import com.example.monytix.data.KpiResponse
 import com.example.monytix.data.TransactionRecordResponse
 import androidx.compose.animation.AnimatedVisibility
@@ -197,7 +197,7 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = colorScheme.primary)
+                        MonytixSpinner()
                     }
                 } else {
                     AnimatedContent(

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { fetchUserGoals, fetchGoalProgress } from '@/lib/api/goals'
 import type { GoalResponse, GoalProgressItem, AIInsight } from '@/types/goals'
 import GoalAIInsightCard from '../components/GoalAIInsightCard'

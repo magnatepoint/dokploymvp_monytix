@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { updateTransaction } from '@/lib/api/spendsense'
 import { fetchCategories, fetchSubcategories } from '@/lib/api/spendsense'
 import type { Transaction, Category, Subcategory, TransactionUpdate } from '@/types/spendsense'
@@ -145,7 +145,7 @@ export default function TransactionEditModal({
     }
 
     // Validate session before attempting update
-    if (!session?.access_token) {
+    if (!session?.getValidToken) {
       setError('Session expired. Please refresh the page and try again.')
       return
     }

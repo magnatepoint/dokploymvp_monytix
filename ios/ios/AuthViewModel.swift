@@ -6,7 +6,9 @@
 //
 
 import Foundation
+import UIKit
 import FirebaseAuth
+import GoogleSignIn
 
 enum AuthStep {
     case login
@@ -140,14 +142,38 @@ class AuthViewModel {
         isLoading = false
     }
 
-    // Sign in with Google - requires Google Sign-In SDK or custom OAuth flow
+    // Sign in with Google via GIDSignIn + Firebase Auth
     func signInWithGoogle() async {
         AnalyticsHelper.logEvent("sign_in_google", parameters: ["method": "google"])
         isLoading = true
         errorMessage = nil
-        // Firebase Google Sign-In on iOS typically uses GIDSignIn. For now, show message.
-        errorMessage = "Google Sign-In: Add FirebaseAuth with Google Sign-In. See Firebase docs."
-        isLoading = false
+        defer { isLoading = false }
+        guard let clientID = FirebaseApp.app()?.options.clientID else {
+            errorMessage = "Firebase client ID not found. Add GoogleService-Info.plist."
+            return
+        }
+        let config = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = config
+        guard let rootVC = UIApplication.shared.rootViewController else {
+            errorMessage = "Could not get window for sign-in."
+            return
+        }
+        do {
+            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootVC)
+            guard let user = result.user,
+                  let idToken = user.idToken?.tokenString else {
+                errorMessage = "Google Sign-In: no ID token."
+                return
+            }
+            let credential = GoogleAuthProvider.credential(
+                withIDToken: idToken,
+                accessToken: user.accessToken.tokenString
+            )
+            let authResult = try await Auth.auth().signIn(with: credential)
+            await applyFirebaseUser(authResult.user)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // Phone OTP - Send OTP (requires AuthUIDelegate for reCAPTCHA; pass nil for testing)

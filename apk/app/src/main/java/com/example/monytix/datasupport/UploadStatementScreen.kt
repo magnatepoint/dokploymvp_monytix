@@ -24,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -46,6 +45,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.monytix.R
+import com.example.monytix.ui.PremiumMonytixSpinner
 
 @Composable
 fun UploadStatementScreen(
@@ -146,11 +146,7 @@ fun UploadStatementScreen(
                 verticalArrangement = Arrangement.Center
             ) {
                 if (uiState.isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(48.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
+                    PremiumMonytixSpinner(size = 48.dp, stroke = 8.dp)
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "Uploading...",

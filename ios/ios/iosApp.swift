@@ -7,11 +7,16 @@
 
 import SwiftUI
 import FirebaseCore
+import GoogleSignIn
 
 @main
 struct iosApp: App {
     init() {
-        FirebaseApp.configure()
+        // Only configure Firebase if GoogleService-Info.plist is in the app bundle.
+        // Add the plist from Firebase Console (Project Settings → Your apps → Add iOS app) and add the file to the Xcode project.
+        if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
+            FirebaseApp.configure()
+        }
     }
 
     @State private var authViewModel = AuthViewModel()
@@ -20,6 +25,9 @@ struct iosApp: App {
         WindowGroup {
             ContentView()
                 .environment(authViewModel)
+                .onOpenURL { url in
+                    GIDSignIn.sharedInstance.handle(url)
+                }
         }
     }
 }

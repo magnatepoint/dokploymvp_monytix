@@ -2,7 +2,9 @@ package com.example.monytix.profile
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Context
 import com.example.monytix.auth.FirebaseAuthManager
+import com.example.monytix.auth.SecureTokenStorage
 import com.example.monytix.data.BackendApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,8 +79,9 @@ class ProfileViewModel : ViewModel() {
         _uiState.update { it.copy(deleteDataSuccess = false) }
     }
 
-    fun logout() {
+    fun logout(context: Context) {
         viewModelScope.launch {
+            SecureTokenStorage.clear(context)
             FirebaseAuthManager.signOut()
         }
     }
@@ -125,9 +128,10 @@ class ProfileViewModel : ViewModel() {
         }
     }
 
-    fun deleteAccount() {
+    fun deleteAccount(context: Context) {
         viewModelScope.launch {
             // TODO: Call backend delete account when available
+            SecureTokenStorage.clear(context)
             FirebaseAuthManager.signOut()
         }
     }

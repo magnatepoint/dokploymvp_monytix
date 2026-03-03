@@ -27,12 +27,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -59,6 +59,7 @@ import com.example.monytix.data.BudgetRecommendation
 import com.example.monytix.data.BudgetStateResponse
 import com.example.monytix.data.CommittedBudget
 import com.example.monytix.data.BudgetVariance
+import com.example.monytix.ui.MonytixSpinner
 import com.example.monytix.ui.theme.AccentPrimary
 import com.example.monytix.ui.theme.ChartBlue
 import com.example.monytix.ui.theme.ChartGreen
@@ -157,30 +158,35 @@ fun BudgetPilotScreen(
         containerColor = colorScheme.background
         // No FAB - primary actions are inline
     ) { innerPadding ->
-        if (uiState.isLoadingState && isZeroState) {
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(color = AccentPrimary)
+        PullToRefreshBox(
+            isRefreshing = uiState.isLoadingState,
+            onRefresh = { viewModel.refresh() }
+        ) {
+            if (uiState.isLoadingState && isZeroState) {
+                Box(
+                    modifier = modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    MonytixSpinner()
+                }
+            } else if (isZeroState) {
+                ZeroStateCard(
+                    modifier = modifier.padding(innerPadding),
+                    onAddTransaction = { onNavigateTo(AppDestinations.DATA) }
+                )
+            } else {
+                DataStateContent(
+                    modifier = modifier.padding(innerPadding),
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    dismissedSuggestion = dismissedSuggestion,
+                    onDismissSuggestion = { dismissedSuggestion = true },
+                    onShowAddBudget = { showAddBudget = true },
+                    onShowPlanPreview = { showPlanPreview = it }
+                )
             }
-        } else if (isZeroState) {
-            ZeroStateCard(
-                modifier = modifier.padding(innerPadding),
-                onAddTransaction = { onNavigateTo(AppDestinations.DATA) }
-            )
-        } else {
-            DataStateContent(
-                modifier = modifier.padding(innerPadding),
-                uiState = uiState,
-                viewModel = viewModel,
-                dismissedSuggestion = dismissedSuggestion,
-                onDismissSuggestion = { dismissedSuggestion = true },
-                onShowAddBudget = { showAddBudget = true },
-                onShowPlanPreview = { showPlanPreview = it }
-            )
         }
     }
 
@@ -340,7 +346,7 @@ private fun PlanPreviewBottomSheet(
                     colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary, contentColor = MaterialTheme.colorScheme.onPrimary)
                 ) {
                     if (isCommitting) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        MonytixSpinner(size = 16.dp, stroke = 2.dp)
                         Spacer(Modifier.width(8.dp))
                     }
                     Text(if (isCommitting) "Activating…" else "Start this plan")
@@ -688,7 +694,7 @@ private fun OptimizationSuggestionCard(
                     colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary, contentColor = MaterialTheme.colorScheme.onPrimary)
                 ) {
                     if (isApplying) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        MonytixSpinner(size = 14.dp, stroke = 2.dp)
                         Spacer(Modifier.width(6.dp))
                     }
                     Text(if (isApplying) "Applying…" else "Apply")

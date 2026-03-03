@@ -36,6 +36,8 @@ class UploadBatch(BaseModel):
 class TransactionRecord(BaseModel):
     txn_id: str
     txn_date: date
+    txn_time: str | None = None  # Time of day (e.g. "15:30:00") from view
+    recorded_at: datetime | None = None  # When the row was inserted (txn_fact.created_at)
     merchant: str | None
     category: str | None
     subcategory: str | None

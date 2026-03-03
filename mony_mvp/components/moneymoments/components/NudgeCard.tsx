@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import type { Nudge } from '@/types/moneymoments'
 import { glassCardPrimary } from '@/lib/theme/glass'
 import { logNudgeInteraction } from '@/lib/api/moneymoments'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 
 interface NudgeCardProps {
   nudge: Nudge

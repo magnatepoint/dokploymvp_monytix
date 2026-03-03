@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import type { CommittedBudget, BudgetVariance } from '@/types/budget'
 import { glassCardPrimary } from '@/lib/theme/glass'
 import BudgetAllocationBar from './BudgetAllocationBar'

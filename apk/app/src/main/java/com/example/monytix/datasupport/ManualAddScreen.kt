@@ -14,7 +14,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -31,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.monytix.R
+import com.example.monytix.ui.MonytixSpinner
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -157,7 +157,7 @@ fun ManualAddScreen(
             )
         ) {
             if (uiState.value.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.height(24.dp), color = Color.Black, strokeWidth = 2.dp)
+                MonytixSpinner(size = 20.dp, stroke = 2.dp)
             } else {
                 Text(stringResource(R.string.manual_add), fontWeight = FontWeight.Medium)
             }

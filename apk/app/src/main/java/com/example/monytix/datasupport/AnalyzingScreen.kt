@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LinearProgressIndicator
+import com.example.monytix.ui.MonytixProgressRing
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,10 +59,10 @@ fun AnalyzingScreen(
             modifier = Modifier.alpha(pulseAlpha),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            androidx.compose.material3.CircularProgressIndicator(
-                modifier = Modifier.size(72.dp),
-                color = Color(0xFF64B5F6),
-                strokeWidth = 3.dp
+            MonytixProgressRing(
+                progress = progress,
+                size = 72.dp,
+                stroke = 10.dp
             )
         }
         Spacer(modifier = Modifier.height(32.dp))

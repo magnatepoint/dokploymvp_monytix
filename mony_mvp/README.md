@@ -5,7 +5,7 @@ A Next.js application for Monytix - Your Personal Finance Companion.
 ## Features
 
 - 🎨 **Splash Screen** - 3-second branded splash screen with Monytix logo
-- 🔐 **Authentication** - Supabase authentication with Google OAuth sign-in
+- 🔐 **Authentication** - Firebase Auth (email/password and Google); backend uses Firebase ID token and UID for spendsense, goaltracker, budgetpilot, moneymoments
 - 🔗 **Backend Integration** - Connected to Monytix backend API
 - 📱 **Responsive Design** - Modern UI with Tailwind CSS
 
@@ -15,8 +15,8 @@ A Next.js application for Monytix - Your Personal Finance Companion.
 
 - Node.js 18+ 
 - npm, yarn, pnpm, or bun
-- Supabase account and project
-- Backend API access
+- Firebase project (for web app auth)
+- Backend API (expects Firebase ID token in Authorization header)
 
 ### Installation
 
@@ -31,10 +31,15 @@ npm install
 Create a `.env.local` file in the root directory. See [ENV_SETUP.md](./ENV_SETUP.md) for detailed instructions.
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+# Firebase (required for login; same project as Android/iOS)
+NEXT_PUBLIC_FIREBASE_API_KEY=your-api-key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
+NEXT_PUBLIC_FIREBASE_APP_ID=1:123456789:web:abc123
+
 NEXT_PUBLIC_API_URL=https://backend.monytix.ai
-NEXT_PUBLIC_SUPABASE_REDIRECT_URL=http://localhost:3000/auth/callback
 ```
 
 3. Run the development server:

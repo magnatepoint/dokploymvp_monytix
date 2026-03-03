@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { fetchGoalCatalog, fetchLifeContext, fetchRecommendedGoals } from '@/lib/api/goals'
 import type { GoalCatalogItem, LifeContextRequest, SelectedGoal } from '@/types/goals'
 import LifeContextStep from './LifeContextStep'

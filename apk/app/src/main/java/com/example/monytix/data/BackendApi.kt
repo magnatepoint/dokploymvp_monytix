@@ -1021,6 +1021,8 @@ data class TransactionCreateResponse(
 data class TransactionRecordResponse(
     val txn_id: String,
     val txn_date: String,
+    val txn_time: String? = null,
+    val recorded_at: String? = null,
     val merchant: String?,
     val category: String?,
     val subcategory: String?,

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import Image from 'next/image'
 import { fetchAccounts } from '@/lib/api/console'
 import type { Account } from '@/types/console'

@@ -33,7 +33,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -72,6 +71,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.data.GoalProgressItem
 import com.example.monytix.data.GoalResponse
+import com.example.monytix.ui.MonytixSpinner
 import com.example.monytix.ui.theme.AccentPrimary
 import com.example.monytix.ui.theme.BannerPurple
 import com.example.monytix.ui.theme.ChartOrange
@@ -377,7 +377,7 @@ private fun OverviewTab(
 
     if (uiState.isLoading && uiState.goals.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            MonytixSpinner()
         }
         return
     }
@@ -485,7 +485,7 @@ private fun GoalsListTab(
 
     if (uiState.isLoading && uiState.goals.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            MonytixSpinner()
         }
         return
     }
@@ -630,7 +630,7 @@ private fun AIInsightsTab(viewModel: GoalTrackerViewModel) {
 
     if (uiState.isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            MonytixSpinner()
         }
         return
     }
@@ -1138,11 +1138,7 @@ private fun AddGoalDialog(
                         )
                     ) {
                         if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.width(20.dp).height(20.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
+                            MonytixSpinner(size = 20.dp, stroke = 2.dp)
                         } else {
                             Text("Add")
                         }

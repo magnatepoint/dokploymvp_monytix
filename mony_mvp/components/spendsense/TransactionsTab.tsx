@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { fetchTransactions, deleteTransaction } from '@/lib/api/spendsense'
 import type { Transaction, TransactionListResponse } from '@/types/spendsense'
 import { glassCardSecondary, glassCardPrimary, glassFilter } from '@/lib/theme/glass'
@@ -88,7 +88,7 @@ export default function TransactionsTab({ session }: TransactionsTabProps) {
     const append = page > 1
     loadTransactions(append)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.access_token, page, debouncedSearch, filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.bank_code, filters.start_date, filters.end_date])
+  }, [session.user.id, page, debouncedSearch, filters.category_code, filters.subcategory_code, filters.channel, filters.direction, filters.bank_code, filters.start_date, filters.end_date])
 
   const handleTransactionClick = (transaction: Transaction) => {
     setSelectedTransaction(transaction)

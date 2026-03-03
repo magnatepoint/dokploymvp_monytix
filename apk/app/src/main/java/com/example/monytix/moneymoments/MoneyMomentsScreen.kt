@@ -1,6 +1,10 @@
 package com.example.monytix.moneymoments
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,24 +12,28 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,14 +45,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
+import com.example.monytix.R
 import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.data.MoneyMoment
 import com.example.monytix.data.Nudge
+import com.example.monytix.ui.MonytixSpinner
+import com.example.monytix.ui.theme.AccentPrimary
 import com.example.monytix.ui.theme.GlassCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,10 +105,15 @@ fun MoneyMomentsScreen(
                 AnalyticsHelper.logEvent("tab_selected", mapOf("tab" to it.name.lowercase()))
                 selectedTab = it
             })
-            when (selectedTab) {
-                MmTab.NUDGES -> NudgesTab(viewModel = viewModel)
-                MmTab.HABITS -> HabitsTab(viewModel = viewModel)
-                MmTab.AI_INSIGHTS -> AIInsightsTab(viewModel = viewModel)
+            PullToRefreshBox(
+                isRefreshing = uiState.isMomentsLoading || uiState.isNudgesLoading,
+                onRefresh = { viewModel.loadData() }
+            ) {
+                when (selectedTab) {
+                    MmTab.NUDGES -> NudgesTab(viewModel = viewModel)
+                    MmTab.HABITS -> HabitsTab(viewModel = viewModel)
+                    MmTab.AI_INSIGHTS -> AIInsightsTab(viewModel = viewModel)
+                }
             }
         }
     }
@@ -167,7 +185,7 @@ private fun NudgesTab(viewModel: MoneyMomentsViewModel) {
 
     if (uiState.isNudgesLoading && uiState.nudges.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            MonytixSpinner()
         }
         return
     }
@@ -231,7 +249,7 @@ private fun NudgesTab(viewModel: MoneyMomentsViewModel) {
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
                     ) {
                         if (uiState.isEvaluating || uiState.isComputing) {
-                            CircularProgressIndicator(modifier = Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onPrimary)
+                            MonytixSpinner(size = 20.dp, stroke = 2.dp)
                             Spacer(Modifier.padding(4.dp))
                         }
                         Text(if (uiState.isEvaluating || uiState.isComputing) "Processing..." else "Evaluate & Deliver Nudges")
@@ -323,7 +341,7 @@ private fun HabitsTab(viewModel: MoneyMomentsViewModel) {
 
     if (uiState.isMomentsLoading && uiState.moments.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            MonytixSpinner()
         }
         return
     }
@@ -367,7 +385,7 @@ private fun HabitsTab(viewModel: MoneyMomentsViewModel) {
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
             ) {
                 if (uiState.isComputing) {
-                    CircularProgressIndicator(modifier = Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onPrimary)
+                    MonytixSpinner(size = 20.dp, stroke = 2.dp)
                     Spacer(Modifier.padding(4.dp))
                 }
                 Text(if (uiState.isComputing) "Computing..." else "Compute Moments for Past 12 Months")
@@ -376,59 +394,218 @@ private fun HabitsTab(viewModel: MoneyMomentsViewModel) {
         return
     }
 
+    val behaviorScore = remember(uiState.moments) {
+        if (uiState.moments.isEmpty()) 0 else (uiState.moments.map { it.confidence }.average() * 100).toInt().coerceIn(0, 100)
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("Your Habits", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                stringResource(R.string.habits_section_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = GlassCard),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        stringResource(R.string.habit_behavior_score),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "$behaviorScore / 100",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentPrimary
+                    )
+                    Text(
+                        stringResource(R.string.habit_based_on_count, uiState.moments.size),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+            }
         }
         items(uiState.moments, key = { "${it.habit_id}-${it.month}" }) { moment ->
-            MoneyMomentCard(moment = moment)
+            MoneyMomentCard(
+                moment = moment,
+                allMoments = uiState.moments,
+                display = moment.toHabitCardDisplay()
+            )
         }
     }
 }
 
 @Composable
-private fun MoneyMomentCard(moment: MoneyMoment) {
-    val icon = when {
-        moment.habit_id.contains("burn_rate") || moment.habit_id.contains("spend_to_income") -> "📈"
-        moment.habit_id.contains("micro") || moment.habit_id.contains("cash") -> "ℹ️"
-        else -> "⚠️"
+private fun MoneyMomentCard(
+    moment: MoneyMoment,
+    allMoments: List<MoneyMoment>,
+    display: HabitCardDisplay
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val healthColor = when (display.health) {
+        HabitHealth.Healthy -> com.example.monytix.ui.theme.Success
+        HabitHealth.Moderate -> com.example.monytix.ui.theme.Warning
+        HabitHealth.NeedsAttention -> com.example.monytix.ui.theme.Error
     }
-    val confidenceColor = when {
-        moment.confidence >= 0.7 -> com.example.monytix.ui.theme.Success
-        moment.confidence >= 0.5 -> com.example.monytix.ui.theme.Warning
-        else -> com.example.monytix.ui.theme.Warning
+    val healthText = when (display.health) {
+        HabitHealth.Healthy -> stringResource(R.string.habit_health_healthy)
+        HabitHealth.Moderate -> stringResource(R.string.habit_health_moderate)
+        HabitHealth.NeedsAttention -> stringResource(R.string.habit_health_needs_attention)
     }
-    val valueStr = when {
-        moment.habit_id.contains("ratio") || moment.habit_id.contains("share") -> "${(moment.value * 100).toInt()}%"
-        moment.habit_id.contains("count") -> "${moment.value.toInt()}"
-        else -> formatCurrency(moment.value)
-    }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded },
         colors = CardDefaults.cardColors(containerColor = GlassCard),
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(Modifier.padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(icon, style = MaterialTheme.typography.headlineMedium)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(display.icon, style = MaterialTheme.typography.headlineMedium)
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        display.conversationalTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2
+                    )
+                }
                 Text(
-                    "${(moment.confidence * 100).toInt()}%",
+                    healthText,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.background(confidenceColor, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp)
+                    color = healthColor,
+                    modifier = Modifier
+                        .background(healthColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
+
+            if (display.progressBarRatio != null && display.progressLabel != null) {
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(com.example.monytix.ui.theme.BorderSubtle)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(display.progressBarRatio.coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .background(AccentPrimary, RoundedCornerShape(4.dp))
+                    )
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        display.progressLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                    )
+                    display.idealOrBenchmark?.let { ideal ->
+                        Text(
+                            ideal,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                display.insightLine,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                display.actionLine,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = AccentPrimary
+            )
+
             Spacer(Modifier.height(8.dp))
-            Text(moment.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-            Text(moment.insight_text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), maxLines = 3)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(valueStr, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Text(moment.habit_id.replace("_", " ").uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.habit_view_details),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(Modifier.padding(top = 12.dp)) {
+                    val sameHabitMonths = allMoments
+                        .filter { it.habit_id == moment.habit_id }
+                        .sortedByDescending { it.month }
+                        .take(3)
+                    if (sameHabitMonths.isNotEmpty()) {
+                        Text(
+                            "Last ${sameHabitMonths.size} months",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        sameHabitMonths.forEach { m ->
+                            val v = when {
+                                m.habit_id.contains("ratio") || m.habit_id.contains("share") -> "${(m.value * 100).toInt()}%"
+                                m.habit_id.contains("count") -> "${m.value.toInt()}"
+                                else -> formatCurrency(m.value)
+                            }
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(m.month, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                Text(v, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, color = AccentPrimary)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -460,7 +637,7 @@ private fun AIInsightsTab(viewModel: MoneyMomentsViewModel) {
 
     if (uiState.isMomentsLoading && uiState.isNudgesLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            MonytixSpinner()
         }
         return
     }
@@ -521,4 +698,98 @@ private fun formatCurrency(amount: Double): String {
     val abs = kotlin.math.abs(amount)
     val formatted = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(abs.toLong())
     return if (amount < 0) "-₹$formatted" else "₹$formatted"
+}
+
+// Habit Card 2.0: diagnostic display model (client-side from MoneyMoment)
+private enum class HabitHealth { Healthy, Moderate, NeedsAttention }
+
+private data class HabitCardDisplay(
+    val health: HabitHealth,
+    val conversationalTitle: String,
+    val idealOrBenchmark: String?,
+    val progressBarRatio: Float?,
+    val progressLabel: String?, // e.g. "92% by Day 15"
+    val insightLine: String,
+    val actionLine: String,
+    val icon: String
+)
+
+private fun MoneyMoment.toHabitCardDisplay(): HabitCardDisplay {
+    val id = habit_id.lowercase()
+    val icon = when {
+        id.contains("burn_rate") || id.contains("spend_to_income") -> "📈"
+        id.contains("micro") || id.contains("cash") -> "ℹ️"
+        else -> "⚠️"
+    }
+    return when {
+        id.contains("burn_rate") || id.contains("early") -> {
+            val ratio = value.coerceIn(0.0, 1.0).toFloat()
+            val health = when {
+                value > 0.75 -> HabitHealth.NeedsAttention
+                value > 0.6 -> HabitHealth.Moderate
+                else -> HabitHealth.Healthy
+            }
+            HabitCardDisplay(
+                health = health,
+                conversationalTitle = "You spend early in the month",
+                idealOrBenchmark = "Ideal: < 60%",
+                progressBarRatio = ratio,
+                progressLabel = "${(value * 100).toInt()}% by Day 15",
+                insightLine = insight_text.ifBlank { "You are spending most of your monthly budget within the first half of the month." },
+                actionLine = "Try limiting first-week spending to 30% of your budget.",
+                icon = icon
+            )
+        }
+        id.contains("cash") || id.contains("cash_spend") -> {
+            val health = when {
+                value <= 0.2 -> HabitHealth.Healthy
+                value <= 0.5 -> HabitHealth.Moderate
+                else -> HabitHealth.NeedsAttention
+            }
+            HabitCardDisplay(
+                health = health,
+                conversationalTitle = "Cash vs digital mix",
+                idealOrBenchmark = null,
+                progressBarRatio = value.coerceIn(0.0, 1.0).toFloat(),
+                progressLabel = "Digital ${(value * 100).toInt()}% | Cash ${(100 - value * 100).toInt()}%",
+                insightLine = insight_text.ifBlank { "You rely ${if (value >= 0.8) "fully" else "mostly"} on digital payments." },
+                actionLine = "Track small cash spends if any to improve accuracy.",
+                icon = icon
+            )
+        }
+        id.contains("micro") -> {
+            val health = when {
+                confidence >= 0.7 -> HabitHealth.Healthy
+                confidence >= 0.5 -> HabitHealth.Moderate
+                else -> HabitHealth.NeedsAttention
+            }
+            HabitCardDisplay(
+                health = health,
+                conversationalTitle = "Micro-spending pattern",
+                idealOrBenchmark = null,
+                progressBarRatio = null,
+                progressLabel = null,
+                insightLine = insight_text.ifBlank { "Frequent small transactions can silently increase monthly spend." },
+                actionLine = "Set micro-spend alert above ₹3,000/month.",
+                icon = icon
+            )
+        }
+        else -> {
+            val health = when {
+                confidence >= 0.7 -> HabitHealth.Healthy
+                confidence >= 0.5 -> HabitHealth.Moderate
+                else -> HabitHealth.NeedsAttention
+            }
+            HabitCardDisplay(
+                health = health,
+                conversationalTitle = label.ifBlank { habit_id.replace("_", " ").replaceFirstChar { c -> c.uppercase() } },
+                idealOrBenchmark = null,
+                progressBarRatio = null,
+                progressLabel = null,
+                insightLine = insight_text.ifBlank { "Review this pattern for insights." },
+                actionLine = "Review this pattern in SpendSense.",
+                icon = icon
+            )
+        }
+    }
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import OverviewTab from './console/OverviewTab'
 import AccountsTab from './console/AccountsTab'
 import SpendingTab from './console/SpendingTab'

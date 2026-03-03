@@ -57,7 +57,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -71,6 +70,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -100,16 +100,20 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.monytix.R
 import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.data.AccountItemResponse
 import com.example.monytix.data.CategoryResponse
 import com.example.monytix.data.CategorySpendKpi
 import com.example.monytix.data.InsightsResponse
 import com.example.monytix.data.TransactionRecordResponse
+import com.example.monytix.ui.MonytixSpinner
+import com.example.monytix.ui.PremiumMonytixSpinner
 import com.example.monytix.ui.theme.AccentPrimary
 import com.example.monytix.ui.theme.AccentSecondary
 import com.example.monytix.ui.theme.ChartOrange
@@ -122,8 +126,11 @@ import com.example.monytix.ui.theme.Info
 import com.example.monytix.ui.theme.Success
 import com.example.monytix.ui.theme.TextSecondary
 import com.example.monytix.spendsense.components.InteractivePieChart
+import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.YearMonth
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
@@ -207,20 +214,25 @@ fun SpendSenseScreen(
                 AnalyticsHelper.logEvent("tab_selected", mapOf("tab" to it.name.lowercase()))
                 selectedTab = it
             })
-            when (selectedTab) {
-                SpendSenseTab.CATEGORIES -> CategoriesTab(
-                    viewModel = viewModel,
-                    onLaunchFilePicker = onLaunchFilePicker,
-                    onSwitchToTransactions = { selectedTab = SpendSenseTab.TRANSACTIONS },
-                    onShowManualAdd = { selectedTab = SpendSenseTab.TRANSACTIONS; showManualAddByRequest = true }
-                )
-                SpendSenseTab.TRANSACTIONS -> TransactionsTab(
-                    viewModel = viewModel,
-                    onLaunchFilePicker = onLaunchFilePicker,
-                    showManualAddByRequest = showManualAddByRequest,
-                    onClearManualAddRequest = { showManualAddByRequest = false }
-                )
-                SpendSenseTab.INSIGHTS -> InsightsTab(viewModel = viewModel)
+            PullToRefreshBox(
+                isRefreshing = uiState.isLoading,
+                onRefresh = { viewModel.refresh() }
+            ) {
+                when (selectedTab) {
+                    SpendSenseTab.CATEGORIES -> CategoriesTab(
+                        viewModel = viewModel,
+                        onLaunchFilePicker = onLaunchFilePicker,
+                        onSwitchToTransactions = { selectedTab = SpendSenseTab.TRANSACTIONS },
+                        onShowManualAdd = { selectedTab = SpendSenseTab.TRANSACTIONS; showManualAddByRequest = true }
+                    )
+                    SpendSenseTab.TRANSACTIONS -> TransactionsTab(
+                        viewModel = viewModel,
+                        onLaunchFilePicker = onLaunchFilePicker,
+                        showManualAddByRequest = showManualAddByRequest,
+                        onClearManualAddRequest = { showManualAddByRequest = false }
+                    )
+                    SpendSenseTab.INSIGHTS -> InsightsTab(viewModel = viewModel)
+                }
             }
         }
     }
@@ -349,7 +361,7 @@ private fun CategoriesTab(
     Box(Modifier.fillMaxSize()) {
         if (uiState.isLoading && uiState.kpis == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                MonytixSpinner()
             }
         } else {
             val kpis = uiState.kpis
@@ -825,7 +837,6 @@ private fun TransactionsTab(
     }
 
     LaunchedEffect(Unit) {
-        viewModel.ensureDefaultTransactionDateRange()
         viewModel.loadTransactions(1, append = false)
         viewModel.loadDebitCreditSummary()
         viewModel.loadInsights()
@@ -1161,7 +1172,7 @@ private fun TransactionsTab(
 
         if (uiState.isLoading && uiState.transactions.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                MonytixSpinner()
             }
         } else if (uiState.transactions.isEmpty()) {
             EmptyState(
@@ -1216,12 +1227,19 @@ private fun TransactionsTab(
                 }
                 if (uiState.transactionsTotal > uniqueTransactions.size) {
                     item(key = "load_more_button") {
+                        val nextPage = (uniqueTransactions.size / 25) + 1
+                        val remaining = maxOf(0, uiState.transactionsTotal - uniqueTransactions.size)
                         Button(
-                            onClick = { viewModel.loadTransactions((uniqueTransactions.size / 25) + 2, append = true) },
+                            onClick = { viewModel.loadTransactions(nextPage, append = true) },
                             modifier = Modifier.fillMaxWidth(),
+                            enabled = !uiState.isLoading,
                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = GlassCard, contentColor = MaterialTheme.colorScheme.onSurface)
                         ) {
-                            Text("Load More")
+                            if (uiState.isLoading) {
+                                MonytixSpinner(size = 20.dp, stroke = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(if (uiState.isLoading) "Loading…" else stringResource(R.string.load_more_with_count, remaining))
                         }
                     }
                 }
@@ -1449,7 +1467,8 @@ private fun TransactionDetailDialog(
                 ) {
                     if (!isEditing) {
                         Column(Modifier.padding(16.dp)) {
-                            DetailRow("Date", transaction.txn_date)
+                            DetailRow("Date", formatTransactionDateDisplay(transaction.txn_date, transaction.txn_time))
+                            transaction.recorded_at?.let { DetailRow("Recorded at", formatRecordedAtDisplay(it)) }
                             DetailRow("Merchant", transaction.merchant ?: "-")
                             DetailRow("Category", transaction.category ?: "-")
                             DetailRow("Subcategory", transaction.subcategory ?: "-")
@@ -1635,6 +1654,29 @@ private fun TransactionDetailDialog(
     }
 }
 
+private fun formatTransactionDateDisplay(txnDate: String, txnTime: String?): String {
+    return try {
+        val date = LocalDate.parse(txnDate)
+        val dateStr = date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(Locale.getDefault()))
+        if (!txnTime.isNullOrBlank()) {
+            val timeStr = try {
+                val t = if (txnTime.length <= 5) LocalTime.parse(txnTime, DateTimeFormatter.ofPattern("HH:mm"))
+                else LocalTime.parse(txnTime, DateTimeFormatter.ISO_LOCAL_TIME)
+                t.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
+            } catch (_: Exception) { null }
+            if (timeStr != null) "$dateStr, $timeStr" else dateStr
+        } else dateStr
+    } catch (_: Exception) { txnDate }
+}
+
+private fun formatRecordedAtDisplay(recordedAt: String): String {
+    return try {
+        val instant = Instant.parse(recordedAt)
+        val zdt = instant.atZone(ZoneId.systemDefault())
+        zdt.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withLocale(Locale.getDefault()))
+    } catch (_: Exception) { recordedAt }
+}
+
 @Composable
 private fun DetailRow(label: String, value: String) {
     Row(
@@ -1716,23 +1758,20 @@ private fun UploadStatementDialog(
     onSuccess: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val uploadPhase = UploadProcessingState.phase.value
+    val uploadErrorMessage = UploadProcessingState.errorMessage.value
     val colorScheme = MaterialTheme.colorScheme
     var password by remember { mutableStateOf("") }
-    var hasInitiatedUpload by remember { mutableStateOf(false) }
     val needsPassword = uiState.error?.lowercase()?.contains("password") == true
 
-    LaunchedEffect(uiState.isLoading, uiState.error) {
-        if (hasInitiatedUpload && !uiState.isLoading && uiState.error == null) {
-            hasInitiatedUpload = false
-            onSuccess()
-        }
+    fun dismissAndClear() {
+        viewModel.clearUploadProcessingState()
+        viewModel.clearError()
+        onDismiss()
     }
 
     androidx.compose.ui.window.Dialog(
-        onDismissRequest = {
-            viewModel.clearError()
-            onDismiss()
-        },
+        onDismissRequest = { dismissAndClear() },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Card(
@@ -1748,84 +1787,166 @@ private fun UploadStatementDialog(
                     .verticalScroll(rememberScrollState())
                     .padding(24.dp)
             ) {
-                Text("Upload Statement", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colorScheme.onSurface)
-                Text("PDF, Excel (XLS/XLSX), or CSV", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                Spacer(Modifier.height(16.dp))
-                Text(filename, style = MaterialTheme.typography.bodyMedium, color = colorScheme.onSurface, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(16.dp))
-                val isPdf = filename.endsWith(".pdf", ignoreCase = true)
-                Text(
-                    if (needsPassword) "PDF Password (required)" else if (isPdf) "PDF Password (if file is locked)" else "PDF Password (optional)",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = if (isPdf || needsPassword) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (needsPassword) ChartOrange else if (isPdf) colorScheme.onSurface else TextSecondary
-                )
-                Spacer(Modifier.height(4.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    placeholder = {
+                when (uploadPhase) {
+                    UploadProcessingPhase.Processing -> {
+                        Text("Upload Statement", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colorScheme.onSurface)
+                        Spacer(Modifier.height(24.dp))
+                        Box(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            PremiumMonytixSpinner(size = 56.dp, stroke = 10.dp)
+                        }
+                        Spacer(Modifier.height(16.dp))
                         Text(
-                            if (needsPassword) "Enter password to unlock PDF" else if (isPdf) "Enter password if PDF is locked" else "Enter password if file is encrypted",
+                            stringResource(R.string.upload_processing_backend),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.upload_processing_backend_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary
                         )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = colorScheme.onSurface,
-                        unfocusedTextColor = colorScheme.onSurface,
-                        focusedBorderColor = if (needsPassword) ChartOrange else MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = colorScheme.onSurface.copy(alpha = 0.3f)
-                    )
-                )
-                if (needsPassword) {
-                    Text(
-                        "This file is password protected. Enter the password and tap Upload.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = ChartOrange,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                } else if (isPdf) {
-                    Text(
-                        "If your PDF is password-protected, enter it above before tapping Upload.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                uiState.error?.let { err ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = ChartRed.copy(alpha = 0.15f)),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(err, style = MaterialTheme.typography.bodySmall, color = ChartRed, modifier = Modifier.padding(12.dp))
                     }
-                    Spacer(Modifier.height(12.dp))
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                    TextButton(onClick = { viewModel.clearError(); onDismiss() }) {
-                        Text("Cancel", color = colorScheme.onSurface.copy(alpha = 0.7f))
+                    UploadProcessingPhase.Complete -> {
+                        Text("Upload Statement", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colorScheme.onSurface)
+                        Spacer(Modifier.height(24.dp))
+                        Text(
+                            stringResource(R.string.upload_processing_complete),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = com.example.monytix.ui.theme.Success
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.upload_processing_complete_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(24.dp))
+                        Button(
+                            onClick = {
+                                viewModel.clearUploadProcessingState()
+                                onSuccess()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                        ) {
+                            Text(stringResource(R.string.upload_processing_done))
+                        }
                     }
-                    Button(
-                        onClick = {
-                            if (needsPassword && password.isBlank()) return@Button
-                            Log.d("MonytixUpload", "UploadStatementDialog: Upload tapped filename=$filename hasPassword=${password.isNotBlank()}")
-                            hasInitiatedUpload = true
-                            viewModel.uploadStatement(fileBytes, filename, password.takeIf { it.isNotBlank() })
-                        },
-                        enabled = !uiState.isLoading && (!needsPassword || password.isNotBlank()),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (uiState.isLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-                                Spacer(Modifier.width(8.dp))
+                    UploadProcessingPhase.Failed -> {
+                        Text("Upload Statement", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colorScheme.onSurface)
+                        Spacer(Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = ChartRed.copy(alpha = 0.15f)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                uploadErrorMessage ?: uiState.error ?: "Upload failed",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = ChartRed,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                            TextButton(onClick = { dismissAndClear() }) {
+                                Text("Cancel", color = colorScheme.onSurface.copy(alpha = 0.7f))
                             }
-                            Text(if (uiState.isLoading) "Uploading..." else "Upload")
+                            Button(
+                                onClick = {
+                                    viewModel.clearUploadProcessingState()
+                                    viewModel.clearError()
+                                    viewModel.uploadStatement(fileBytes, filename, password.takeIf { it.isNotBlank() })
+                                },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                            ) {
+                                Text(stringResource(R.string.upload_processing_retry))
+                            }
+                        }
+                    }
+                    else -> {
+                        Text("Upload Statement", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colorScheme.onSurface)
+                        Text("PDF, Excel (XLS/XLSX), or CSV", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        Spacer(Modifier.height(16.dp))
+                        Text(filename, style = MaterialTheme.typography.bodyMedium, color = colorScheme.onSurface, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(16.dp))
+                        val isPdf = filename.endsWith(".pdf", ignoreCase = true)
+                        Text(
+                            if (needsPassword) "PDF Password (required)" else if (isPdf) "PDF Password (if file is locked)" else "PDF Password (optional)",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (isPdf || needsPassword) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (needsPassword) ChartOrange else if (isPdf) colorScheme.onSurface else TextSecondary
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            placeholder = {
+                                Text(
+                                    if (needsPassword) "Enter password to unlock PDF" else if (isPdf) "Enter password if PDF is locked" else "Enter password if file is encrypted",
+                                    color = TextSecondary
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = colorScheme.onSurface,
+                                unfocusedTextColor = colorScheme.onSurface,
+                                focusedBorderColor = if (needsPassword) ChartOrange else MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = colorScheme.onSurface.copy(alpha = 0.3f)
+                            )
+                        )
+                        if (needsPassword) {
+                            Text(
+                                "This file is password protected. Enter the password and tap Upload.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = ChartOrange,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        } else if (isPdf) {
+                            Text(
+                                "If your PDF is password-protected, enter it above before tapping Upload.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        uiState.error?.let { err ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = ChartRed.copy(alpha = 0.15f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(err, style = MaterialTheme.typography.bodySmall, color = ChartRed, modifier = Modifier.padding(12.dp))
+                            }
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                            TextButton(onClick = { dismissAndClear() }) {
+                                Text("Cancel", color = colorScheme.onSurface.copy(alpha = 0.7f))
+                            }
+                            Button(
+                                onClick = {
+                                    if (needsPassword && password.isBlank()) return@Button
+                                    Log.d("MonytixUpload", "UploadStatementDialog: Upload tapped filename=$filename hasPassword=${password.isNotBlank()}")
+                                    viewModel.uploadStatement(fileBytes, filename, password.takeIf { it.isNotBlank() })
+                                },
+                                enabled = !uiState.isLoading && (!needsPassword || password.isNotBlank()),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (uiState.isLoading) {
+                                        MonytixSpinner(size = 20.dp, stroke = 2.dp)
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    Text(if (uiState.isLoading) "Uploading..." else "Upload")
+                                }
+                            }
                         }
                     }
                 }
@@ -2112,7 +2233,7 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
 
     if (uiState.isLoading && uiState.insights == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            MonytixSpinner()
         }
         return
     }
@@ -2289,10 +2410,7 @@ private fun ExpandableInsightBanner(
             if (expanded && isExpandable) {
                 Spacer(Modifier.height(12.dp))
                 if (uiState.transferBreakdownLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = AccentSecondary
-                    )
+                    MonytixSpinner(size = 24.dp, stroke = 4.dp)
                 } else if (uiState.transferBreakdownTopMerchants.isNotEmpty()) {
                     Text("Top transfer sources:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
                     Spacer(Modifier.height(6.dp))

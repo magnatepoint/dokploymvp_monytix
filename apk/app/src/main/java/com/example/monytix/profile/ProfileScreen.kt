@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -48,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.BuildConfig
 import com.example.monytix.R
+import com.example.monytix.ui.MonytixSpinner
 import com.example.monytix.ui.theme.Error
 import com.example.monytix.ui.theme.GlassCard
 
@@ -57,6 +57,7 @@ fun ProfileScreen(
     viewModel: ProfileViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
@@ -150,7 +151,7 @@ fun ProfileScreen(
                             )
                         }
                         if (uiState.isDeletingData) {
-                            CircularProgressIndicator(modifier = Modifier.width(24.dp).height(24.dp), color = MaterialTheme.colorScheme.onSurface, strokeWidth = 2.dp)
+                            MonytixSpinner(size = 24.dp, stroke = 2.dp)
                         }
                     }
                 }
@@ -239,7 +240,7 @@ fun ProfileScreen(
         LogoutConfirmDialog(
             onConfirm = {
                 AnalyticsHelper.logEvent("logout")
-                viewModel.logout()
+                viewModel.logout(context.applicationContext)
                 showLogoutConfirm = false
             },
             onDismiss = { showLogoutConfirm = false }
@@ -250,7 +251,7 @@ fun ProfileScreen(
         DeleteAccountDialog(
             onConfirm = {
                 AnalyticsHelper.logEvent("delete_account")
-                viewModel.deleteAccount()
+                viewModel.deleteAccount(context.applicationContext)
                 showDeleteAccount = false
             },
             onDismiss = { showDeleteAccount = false }

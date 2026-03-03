@@ -32,6 +32,14 @@ from .ml.predictor import get_predictor_service
 logger = logging.getLogger(__name__)
 
 
+def _row_txn_time(row: dict) -> str | None:
+    """Serialize txn_time from DB row to string (HH:MM:SS) or None."""
+    t = row.get("txn_time")
+    if t is None:
+        return None
+    return str(t)
+
+
 class SpendSenseService:
     """Facade for SpendSense ingestion and KPI snapshots.
 
@@ -874,8 +882,11 @@ class SpendSenseService:
             v.channel,
             v.amount,
             v.direction,
-            v.confidence
+            v.confidence,
+            v.txn_time,
+            f.created_at AS recorded_at
         FROM spendsense.vw_txn_effective v
+        JOIN spendsense.txn_fact f ON f.txn_id = v.txn_id AND f.user_id = v.user_id
         LEFT JOIN spendsense.dim_category dc ON dc.category_code = v.category_code
         LEFT JOIN spendsense.dim_subcategory ds ON ds.subcategory_code = v.subcategory_code
         WHERE {where_sql}
@@ -889,6 +900,8 @@ class SpendSenseService:
                 TransactionRecord(
                     txn_id=str(row["txn_id"]),
                     txn_date=row["txn_date"],
+                    txn_time=_row_txn_time(row),
+                    recorded_at=row.get("recorded_at"),
                     merchant=row["merchant_name"],
                     category=row["category_name"],
                     subcategory=row["subcategory_name"],
@@ -1525,8 +1538,11 @@ class SpendSenseService:
             v.bank_code,
             v.channel,
             v.amount,
-            v.direction
+            v.direction,
+            v.txn_time,
+            f.created_at AS recorded_at
         FROM spendsense.vw_txn_effective v
+        JOIN spendsense.txn_fact f ON f.txn_id = v.txn_id AND f.user_id = v.user_id
         LEFT JOIN spendsense.dim_category dc ON dc.category_code = v.category_code
         LEFT JOIN spendsense.dim_subcategory ds ON ds.subcategory_code = v.subcategory_code
         WHERE v.txn_id = $1 AND v.user_id = $2
@@ -1538,6 +1554,8 @@ class SpendSenseService:
         return TransactionRecord(
             txn_id=str(row["txn_id"]),
             txn_date=row["txn_date"],
+            txn_time=_row_txn_time(row),
+            recorded_at=row.get("recorded_at"),
             merchant=row["merchant_name"],
             category=row["category_name"],
             subcategory=row["subcategory_name"],
@@ -1655,6 +1673,8 @@ class SpendSenseService:
             SELECT
                 v.txn_id,
                 v.txn_date,
+                v.txn_time,
+                f.created_at AS recorded_at,
                 COALESCE(
                     v.merchant_name_norm,
                     CASE 
@@ -1672,6 +1692,7 @@ class SpendSenseService:
                 v.amount,
                 v.direction
             FROM spendsense.vw_txn_effective v
+            JOIN spendsense.txn_fact f ON f.txn_id = v.txn_id AND f.user_id = v.user_id
             LEFT JOIN spendsense.dim_category dc ON dc.category_code = v.category_code
             LEFT JOIN spendsense.dim_subcategory ds ON ds.subcategory_code = v.subcategory_code
             WHERE v.txn_id = $1 AND v.user_id = $2
@@ -1686,6 +1707,8 @@ class SpendSenseService:
         return TransactionRecord(
             txn_id=str(row["txn_id"]),
             txn_date=row["txn_date"],
+            txn_time=_row_txn_time(row),
+            recorded_at=row.get("recorded_at"),
             merchant=row["merchant_name"],
             category=row["category_name"],
             subcategory=row["subcategory_name"],

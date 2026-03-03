@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { fetchKPIs, fetchInsights, fetchGoals, transformGoals, generateAIInsights } from '@/lib/api/console'
 import { fetchTransactions } from '@/lib/api/spendsense'
 import type { AIInsight } from '@/types/console'

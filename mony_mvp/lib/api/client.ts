@@ -1,4 +1,4 @@
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 
 // Validate API URL - should not contain paths like /auth/callback
 const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://backend.monytix.ai'
@@ -44,6 +44,7 @@ async function doFetch<T>(
   session: Session,
   options?: RequestInit
 ): Promise<T> {
+  const token = await session.getValidToken()
   const endpointPath = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
   const fullUrl = `${baseUrl.replace(/\/$/, '')}${endpointPath}`
   const controller = new AbortController()
@@ -53,7 +54,7 @@ async function doFetch<T>(
     ...options,
     signal: controller.signal,
     headers: {
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       ...options?.headers,
     },
@@ -96,8 +97,8 @@ export async function fetchWithAuth<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
-  // Validate session token before making request
-  if (!session?.access_token) {
+  // Validate session before making request
+  if (!session?.getValidToken) {
     throw new Error('Authentication required. Please log in again.')
   }
 

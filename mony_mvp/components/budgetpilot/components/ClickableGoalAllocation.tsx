@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { fetchGoalProgress, getGoal } from '@/lib/api/goals'
 import type { GoalProgressItem } from '@/types/console'
 import type { GoalResponse } from '@/types/goals'

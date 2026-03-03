@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
+import com.example.monytix.ui.PremiumMonytixSpinner
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,12 +56,7 @@ fun ParsingProgressScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.alpha(alpha)
         ) {
-            Text(
-                text = "◐",
-                style = MaterialTheme.typography.displayLarge,
-                color = Color.White,
-                modifier = Modifier.size(80.dp)
-            )
+            PremiumMonytixSpinner(size = 56.dp, stroke = 10.dp)
         }
         Spacer(modifier = Modifier.height(24.dp))
         Text(

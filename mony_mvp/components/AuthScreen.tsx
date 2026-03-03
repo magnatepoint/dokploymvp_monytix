@@ -2,9 +2,15 @@
 
 import Image from 'next/image'
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { getFirebaseAuth, sessionFromFirebaseUser } from '@/lib/firebase/client'
+import type { Session } from '@/lib/auth/types'
+import { GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth'
 
-export default function AuthScreen() {
+interface AuthScreenProps {
+  onSuccess: (session: Session) => void
+}
+
+export default function AuthScreen({ onSuccess }: AuthScreenProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -12,64 +18,50 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
-  const supabase = createClient()
-
   const handleEmailPasswordAuth = async (e: React.FormEvent) => {
     e.preventDefault()
+    const auth = getFirebaseAuth()
+    if (!auth) {
+      setError('Firebase is not configured. Set NEXT_PUBLIC_FIREBASE_* env vars.')
+      return
+    }
     setIsLoading(true)
     setError(null)
 
     try {
-      if (isLogin) {
-        // Sign in
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        })
-
-        if (signInError) {
-          throw signInError
-        }
-      } else {
-        // Sign up
-        const { error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-        })
-
-        if (signUpError) {
-          throw signUpError
-        } else {
-          setError(null)
-          // Show success message
-          alert('Check your email to confirm your account!')
-        }
+      const userCred = isLogin
+        ? await signInWithEmailAndPassword(auth, email, password)
+        : await createUserWithEmailAndPassword(auth, email, password)
+      onSuccess(sessionFromFirebaseUser(userCred.user))
+      if (!isLogin) {
+        setError(null)
+        alert('Account created. You are signed in.')
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed')
+    } catch (err: unknown) {
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as Error).message) : 'Authentication failed'
+      setError(msg)
+    } finally {
       setIsLoading(false)
     }
   }
 
   const handleGoogleSignIn = async () => {
+    const auth = getFirebaseAuth()
+    if (!auth) {
+      setError('Firebase is not configured. Set NEXT_PUBLIC_FIREBASE_* env vars.')
+      return
+    }
     setIsGoogleLoading(true)
     setError(null)
 
     try {
-      const redirectUrl = process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`
-      
-      const { error: signInError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUrl,
-        },
-      })
-
-      if (signInError) {
-        throw signInError
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign in with Google')
+      const provider = new GoogleAuthProvider()
+      const userCred = await signInWithPopup(auth, provider)
+      onSuccess(sessionFromFirebaseUser(userCred.user))
+    } catch (err: unknown) {
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as Error).message) : 'Failed to sign in with Google'
+      setError(msg)
+    } finally {
       setIsGoogleLoading(false)
     }
   }
@@ -78,7 +70,6 @@ export default function AuthScreen() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-black via-gray-900 to-black px-4">
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center gap-8 rounded-2xl bg-white/5 p-8 backdrop-blur-lg border border-white/10">
-          {/* Logo */}
           <div className="flex flex-col items-center gap-4">
             <Image
               src="/monytix.png"
@@ -93,14 +84,12 @@ export default function AuthScreen() {
             </p>
           </div>
 
-          {/* Error Message */}
           {error && (
             <div className="w-full rounded-lg bg-red-500/10 border border-red-500/20 p-4">
               <p className="text-sm text-red-400">{error}</p>
             </div>
           )}
 
-          {/* Email/Password Form */}
           <form onSubmit={handleEmailPasswordAuth} className="w-full flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <label htmlFor="email" className="text-sm text-gray-300">
@@ -168,14 +157,12 @@ export default function AuthScreen() {
             </button>
           </form>
 
-          {/* Divider */}
           <div className="flex items-center gap-4 w-full">
             <div className="flex-1 h-px bg-white/20"></div>
             <span className="text-sm text-gray-400">OR</span>
             <div className="flex-1 h-px bg-white/20"></div>
           </div>
 
-          {/* Google Sign In Button */}
           <button
             onClick={handleGoogleSignIn}
             disabled={isLoading || isGoogleLoading}
@@ -230,7 +217,6 @@ export default function AuthScreen() {
             )}
           </button>
 
-          {/* Toggle Login/Register */}
           <div className="flex items-center gap-2 text-sm text-gray-400">
             <span>{isLogin ? "Don't have an account?" : 'Already have an account?'}</span>
             <button

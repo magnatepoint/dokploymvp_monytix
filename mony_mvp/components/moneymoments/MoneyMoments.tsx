@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { fetchMoneyMoments, fetchNudges } from '@/lib/api/moneymoments'
 import type { MoneyMoment, Nudge, ProgressMetrics } from '@/types/moneymoments'
 import MoneyMomentsWelcomeBanner from './MoneyMomentsWelcomeBanner'

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { fetchKPIs, fetchAvailableMonths, fetchTransactions, refreshKPIs } from '@/lib/api/spendsense'
 import type { SpendSenseKPIs, TopCategory } from '@/types/spendsense'
 import { glassCardPrimary, glassCardSecondary, glassSection, glassFilter } from '@/lib/theme/glass'

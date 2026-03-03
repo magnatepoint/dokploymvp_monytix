@@ -39,6 +39,14 @@ object PendingManualAddHolder {
     val state = androidx.compose.runtime.mutableStateOf(false)
 }
 
+/** Shared upload/processing status for dialog and tour. Observable from any composable. */
+enum class UploadProcessingPhase { Idle, Uploading, Processing, Complete, Failed }
+
+object UploadProcessingState {
+    val phase = androidx.compose.runtime.mutableStateOf(UploadProcessingPhase.Idle)
+    val errorMessage = androidx.compose.runtime.mutableStateOf<String?>(null)
+}
+
 data class SpendSenseUiState(
     val kpis: KpiResponse? = null,
     val availableMonths: List<String> = emptyList(),
@@ -250,7 +258,7 @@ class SpendSenseViewModel : ViewModel() {
         viewModelScope.launch {
             val token = getAccessToken() ?: return@launch
             val state = _uiState.value
-            if (!append) _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = true, error = null) }
             val limit = 25
             val offset = (page - 1) * limit
             val result = withContext(Dispatchers.IO) {
@@ -819,9 +827,13 @@ class SpendSenseViewModel : ViewModel() {
 
     fun uploadStatement(fileBytes: ByteArray, filename: String, pdfPassword: String? = null) {
         Log.d("MonytixUpload", "uploadStatement: filename=$filename bytes=${fileBytes.size} hasPassword=${pdfPassword != null}")
+        UploadProcessingState.errorMessage.value = null
+        UploadProcessingState.phase.value = UploadProcessingPhase.Uploading
         viewModelScope.launch {
             val token = getAccessToken() ?: run {
                 Log.e("MonytixUpload", "uploadStatement: no access token")
+                UploadProcessingState.phase.value = UploadProcessingPhase.Failed
+                UploadProcessingState.errorMessage.value = "Not signed in"
                 return@launch
             }
             _uiState.update { it.copy(isLoading = true, error = null) }
@@ -832,6 +844,7 @@ class SpendSenseViewModel : ViewModel() {
                 onSuccess = { batch ->
                     Log.d("MonytixUpload", "uploadStatement: success batch_id=${batch.upload_id}")
                     _uiState.update { it.copy(isLoading = false, error = null) }
+                    UploadProcessingState.phase.value = UploadProcessingPhase.Processing
                     pollBatchAndRefresh(batch.upload_id)
                 },
                 onFailure = { e ->
@@ -842,6 +855,8 @@ class SpendSenseViewModel : ViewModel() {
                             error = e.message ?: "Upload failed"
                         )
                     }
+                    UploadProcessingState.phase.value = UploadProcessingPhase.Failed
+                    UploadProcessingState.errorMessage.value = e.message ?: "Upload failed"
                 }
             )
         }
@@ -859,17 +874,28 @@ class SpendSenseViewModel : ViewModel() {
                         loadKpis(_uiState.value.selectedMonth)
                         loadTransactions(1, append = false)
                         loadInsights()
+                        UploadProcessingState.phase.value = UploadProcessingPhase.Complete
+                        UploadProcessingState.errorMessage.value = null
                         return
                     }
                     "failed" -> {
-                        _uiState.update {
-                            it.copy(error = batch.error_message ?: "Parsing failed")
-                        }
+                        val msg = batch.error_message ?: "Parsing failed"
+                        _uiState.update { it.copy(error = msg) }
+                        UploadProcessingState.phase.value = UploadProcessingPhase.Failed
+                        UploadProcessingState.errorMessage.value = msg
                         return
                     }
                 }
             }
             attempts++
         }
+        UploadProcessingState.phase.value = UploadProcessingPhase.Failed
+        UploadProcessingState.errorMessage.value = "Processing timed out"
+    }
+
+    /** Call when dialog is dismissed after success; resets phase to Idle so next upload is clean. */
+    fun clearUploadProcessingState() {
+        UploadProcessingState.phase.value = UploadProcessingPhase.Idle
+        UploadProcessingState.errorMessage.value = null
     }
 }

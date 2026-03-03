@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Construction
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.monytix.R
+import com.example.monytix.ui.MonytixSpinner
 
 /**
  * Full-screen block when app is in maintenance mode.
@@ -62,6 +62,6 @@ fun MaintenanceModeScreen(
             modifier = Modifier.padding(horizontal = 16.dp)
         )
         Spacer(modifier = Modifier.height(32.dp))
-        CircularProgressIndicator(color = Color.White.copy(alpha = 0.8f))
+        MonytixSpinner(size = 48.dp, stroke = 8.dp)
     }
 }

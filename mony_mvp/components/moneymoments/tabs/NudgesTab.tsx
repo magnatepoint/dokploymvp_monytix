@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import type { Nudge, MoneyMoment, ProgressMetrics } from '@/types/moneymoments'
 import { evaluateNudges, processNudges, computeSignal } from '@/lib/api/moneymoments'
 import ProgressMetricCard from '../components/ProgressMetricCard'

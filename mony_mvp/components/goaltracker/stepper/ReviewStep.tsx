@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { submitGoals } from '@/lib/api/goals'
 import type { LifeContextRequest, SelectedGoal, GoalDetailRequest } from '@/types/goals'
 import { glassCardSecondary } from '@/lib/theme/glass'

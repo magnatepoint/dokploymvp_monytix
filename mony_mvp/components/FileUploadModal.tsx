@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { uploadStatementFile, fetchBatchStatus, isSupportedFileType, isPDFFile } from '@/lib/api/upload'
 import { checkPDFPasswordProtectionSimple } from '@/lib/utils/pdfDetection'
 import { glassCardPrimary, glassFilter } from '@/lib/theme/glass'

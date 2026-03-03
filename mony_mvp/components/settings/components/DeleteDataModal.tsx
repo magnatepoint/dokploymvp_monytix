@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { deleteAllData } from '@/lib/api/settings'
 import type { DeleteDataResponse } from '@/types/settings'
 

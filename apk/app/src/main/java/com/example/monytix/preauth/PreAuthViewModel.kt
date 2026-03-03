@@ -184,4 +184,17 @@ class PreAuthViewModel(
             _uiState.update { it.copy(step = PreAuthStep.Auth) }
         }
     }
+
+    /** Go to the previous step in the pre-auth flow. No-op for Splash, UpdateRequired, DeviceVerification, Onboarding. */
+    fun goBack() {
+        val previous = when (_uiState.value.step) {
+            PreAuthStep.Auth -> PreAuthStep.PermissionExplainer
+            PreAuthStep.PermissionExplainer -> PreAuthStep.DataProcessingConsent
+            PreAuthStep.DataProcessingConsent -> PreAuthStep.PrivacyPolicy
+            PreAuthStep.PrivacyPolicy -> PreAuthStep.TermsConditions
+            PreAuthStep.TermsConditions -> PreAuthStep.Onboarding
+            else -> return
+        }
+        _uiState.update { it.copy(step = previous) }
+    }
 }

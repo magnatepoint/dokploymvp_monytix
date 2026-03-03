@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session } from '@/lib/auth/types'
 import { fetchCategories, fetchSubcategories } from '@/lib/api/spendsense'
 import { fetchAccounts } from '@/lib/api/console'
 import type { Category, Subcategory } from '@/types/spendsense'
