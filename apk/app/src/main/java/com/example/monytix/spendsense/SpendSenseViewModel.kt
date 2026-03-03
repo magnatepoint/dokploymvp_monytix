@@ -59,6 +59,7 @@ data class SpendSenseUiState(
     val categories: List<CategoryResponse> = emptyList(),
     val subcategories: List<SubcategoryResponse> = emptyList(),
     val subcategoryBreakdown: List<com.example.monytix.spendsense.components.SubcategoryBreakdownItem> = emptyList(),
+    val categoryDetailMerchants: List<Pair<String, Double>> = emptyList(),
     val channels: List<String> = emptyList(),
     val accounts: List<AccountItemResponse> = emptyList(),
     val userEmail: String? = null,
@@ -158,7 +159,7 @@ class SpendSenseViewModel : ViewModel() {
         viewModelScope.launch {
             val token = getAccessToken() ?: return@launch
             if (categoryCode == null) {
-                _uiState.update { it.copy(subcategoryBreakdown = emptyList()) }
+                _uiState.update { it.copy(subcategoryBreakdown = emptyList(), categoryDetailMerchants = emptyList()) }
                 return@launch
             }
             
@@ -216,8 +217,19 @@ class SpendSenseViewModel : ViewModel() {
                     transaction_count = data.second
                 )
             }.sortedByDescending { it.amount }
+
+            // Top merchants for this category (for CategoryDetailBottomSheet)
+            val merchantMap = mutableMapOf<String, Double>()
+            allTransactions.forEach { txn ->
+                val name = txn.merchant?.takeIf { it.isNotBlank() } ?: "Unknown"
+                merchantMap[name] = (merchantMap[name] ?: 0.0) + txn.amount
+            }
+            val categoryDetailMerchants = merchantMap.entries
+                .sortedByDescending { it.value }
+                .take(10)
+                .map { (name, amount) -> name to amount }
             
-            _uiState.update { it.copy(subcategoryBreakdown = breakdown) }
+            _uiState.update { it.copy(subcategoryBreakdown = breakdown, categoryDetailMerchants = categoryDetailMerchants) }
         }
     }
 

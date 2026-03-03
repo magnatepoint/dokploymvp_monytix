@@ -2309,6 +2309,32 @@ class SpendSenseService:
             }
             for row in top_merchants_rows
         ]
+
+        # Daily spend for Weekday Matrix and "highest day" (when range is one calendar month)
+        daily_spend: list[dict[str, Any]] = []
+        if start_date and end_date:
+            from datetime import timedelta
+            span_days = (end_date - start_date).days
+            if span_days <= 31 and (start_date.month == end_date.month and start_date.year == end_date.year):
+                daily_rows = await self._pool.fetch(
+                    """
+                    SELECT tf.txn_date AS date, SUM(tf.amount) AS amount
+                    FROM spendsense.txn_fact tf
+                    WHERE tf.user_id = $1
+                      AND tf.txn_date >= $2
+                      AND tf.txn_date <= $3
+                      AND tf.direction = 'debit'
+                    GROUP BY tf.txn_date
+                    ORDER BY tf.txn_date
+                    """,
+                    user_id,
+                    start_date,
+                    end_date,
+                )
+                daily_spend = [
+                    {"date": row["date"].strftime("%Y-%m-%d"), "amount": float(row["amount"] or 0)}
+                    for row in daily_rows
+                ]
         
         return {
             "time_series": time_series,
@@ -2317,6 +2343,7 @@ class SpendSenseService:
             "recurring_transactions": recurring_transactions,
             "spending_patterns": spending_patterns,
             "top_merchants": top_merchants,
+            "daily_spend": daily_spend,
             "anomalies": None,  # TODO: Implement anomaly detection
         }
 

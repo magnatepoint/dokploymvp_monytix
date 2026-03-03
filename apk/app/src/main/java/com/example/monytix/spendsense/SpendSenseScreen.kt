@@ -125,12 +125,13 @@ import com.example.monytix.ui.theme.SurfaceElevated
 import com.example.monytix.ui.theme.Info
 import com.example.monytix.ui.theme.Success
 import com.example.monytix.ui.theme.TextSecondary
-import com.example.monytix.spendsense.components.InteractivePieChart
+import com.example.monytix.data.CategoryBreakdownItem
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
@@ -2225,9 +2226,13 @@ private fun ManualAddDialog(
 @Composable
 private fun InsightsTab(viewModel: SpendSenseViewModel) {
     val uiState by viewModel.uiState.collectAsState()
+    var selectedCategoryForSheet by remember { mutableStateOf<CategoryBreakdownItem?>(null) }
+    val now = LocalDate.now()
+    val firstOfMonth = now.withDayOfMonth(1).toString()
+    val lastOfMonth = now.with(TemporalAdjusters.lastDayOfMonth()).toString()
 
     LaunchedEffect(Unit) {
-        viewModel.loadInsights()
+        viewModel.loadInsights(firstOfMonth, lastOfMonth)
         viewModel.loadKpis(null)
     }
 
@@ -2256,61 +2261,32 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
         val prev = trends[trends.size - 2].expenses
         if (prev != 0.0) ((latest - prev) / prev * 100) else 0.0
     } else 0.0
-
+    val dailySpend = insights.daily_spend
+    val highestDay = dailySpend.maxByOrNull { it.amount }
+    val highestCategory = breakdown.firstOrNull()
+    val currentMonth = YearMonth.from(now)
     val alerts = viewModel.insightAlerts()
     val opportunities = viewModel.insightOpportunities()
     val patterns = viewModel.insightPatterns()
+
+    selectedCategoryForSheet?.let { category ->
+        CategoryDetailBottomSheet(
+            category = category,
+            deltaPct = deltaByCategory[category.category_code],
+            subcategoryBreakdown = uiState.subcategoryBreakdown,
+            topMerchants = uiState.categoryDetailMerchants,
+            onDismiss = { selectedCategoryForSheet = null },
+            trendLabel = viewModel.categoryTrendLabel(category)
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (alerts.isNotEmpty()) {
-            item {
-                Text("Alerts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = ChartOrange)
-            }
-            itemsIndexed(alerts, key = { index, item -> "alert_${index}_${item.text.hashCode()}" }) { i, alert ->
-                AnimatedVisibility(
-                    visible = true,
-                    enter = slideInVertically(animationSpec = tween(400), initialOffsetY = { it / 2 }) + fadeIn(animationSpec = tween(400))
-                ) {
-                    if (alert.isExpandable) {
-                        ExpandableInsightBanner(insight = alert.text, viewModel = viewModel, insights = insights)
-                    } else {
-                        InsightBanner(insight = alert.text, color = ChartOrange, emoji = "🟡")
-                    }
-                }
-            }
-        }
-        if (opportunities.isNotEmpty()) {
-            item {
-                Spacer(Modifier.height(8.dp))
-                Text("Optimization Opportunities", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Success)
-            }
-            itemsIndexed(opportunities, key = { index, item -> "opportunity_${index}_${item.text.hashCode()}" }) { i, opportunity ->
-                InsightBanner(insight = opportunity.text, color = Success, emoji = "🟢")
-            }
-        }
-        if (patterns.isNotEmpty()) {
-            item {
-                Spacer(Modifier.height(8.dp))
-                Text("Behavioral Patterns", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = AccentPrimary)
-            }
-            itemsIndexed(patterns, key = { index, item -> "pattern_${index}_${item.text.hashCode()}" }) { i, pattern ->
-                InsightBanner(insight = pattern.text, color = AccentPrimary, emoji = "🔵")
-            }
-        }
-        if (alerts.isEmpty() && opportunities.isEmpty() && patterns.isEmpty()) {
-            item {
-                viewModel.generateSpendSenseInsight()?.let { insight ->
-                    ExpandableInsightBanner(insight = insight, viewModel = viewModel, insights = insights)
-                }
-            }
-        }
         item {
-            Spacer(Modifier.height(8.dp))
-            Text("Spending Overview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text("This month at a glance", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         }
         item {
             Row(
@@ -2328,37 +2304,137 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
                 }
             }
         }
+        if (highestDay != null) {
+            item {
+                Text(
+                    "Highest day: ${formatCurrency(highestDay.amount)} on ${
+                        try {
+                            LocalDate.parse(highestDay.date).format(DateTimeFormatter.ofPattern("MMM d"))
+                        } catch (_: Exception) {
+                            highestDay.date
+                        }
+                    }",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        }
+        if (highestCategory != null) {
+            item {
+                Text(
+                    "Top category: ${highestCategory.category_name}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        }
+
         item {
-            InteractivePieChart(
-                data = breakdown,
-                totalAmount = total,
+            Spacer(Modifier.height(8.dp))
+            Text("Patterns", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+        }
+        item {
+            WeekdayMatrix(dailySpend = dailySpend, month = currentMonth)
+        }
+        item {
+            CostlyDayLine(spendingPatterns = insights.spending_patterns)
+        }
+
+        item {
+            Spacer(Modifier.height(8.dp))
+            Text("Top categories", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+        }
+        item {
+            RankedCategoryBars(
+                categoryBreakdown = breakdown,
+                totalSpend = total,
                 deltaByCategory = deltaByCategory,
-                onCategorySelected = { category ->
-                    // Load subcategory breakdown when category is selected
+                onCategoryClick = { category ->
                     viewModel.loadSubcategoryBreakdown(category.category_code)
+                    selectedCategoryForSheet = category
                 },
-                getTrendLabel = { item -> viewModel.categoryTrendLabel(item) },
-                subcategoryBreakdown = uiState.subcategoryBreakdown,
-                onLoadSubcategoryBreakdown = { categoryCode ->
-                    viewModel.loadSubcategoryBreakdown(categoryCode)
-                }
+                onViewAllCategories = { }
             )
+        }
+
+        if (alerts.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text("Alerts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = ChartOrange)
+            }
+            itemsIndexed(alerts, key = { index, item -> "alert_${index}_${item.text.hashCode()}" }) { _, alert ->
+                AnimatedVisibility(
+                    visible = true,
+                    enter = slideInVertically(animationSpec = tween(400), initialOffsetY = { it / 2 }) + fadeIn(animationSpec = tween(400))
+                ) {
+                    if (alert.isExpandable) {
+                        ExpandableInsightBanner(insight = alert.text, viewModel = viewModel, insights = insights)
+                    } else {
+                        InsightBanner(insight = alert.text, color = ChartOrange, emoji = "🟡", actionLabel = "See why", onAction = { })
+                    }
+                }
+            }
+        }
+        if (opportunities.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text("Optimization Opportunities", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Success)
+            }
+            itemsIndexed(opportunities, key = { index, item -> "opportunity_${index}_${item.text.hashCode()}" }) { _, opportunity ->
+                InsightBanner(insight = opportunity.text, color = Success, emoji = "🟢", actionLabel = "Set limit", onAction = { })
+            }
+        }
+        if (patterns.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text("Behavioral Patterns", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = AccentPrimary)
+            }
+            itemsIndexed(patterns, key = { index, item -> "pattern_${index}_${item.text.hashCode()}" }) { _, pattern ->
+                InsightBanner(insight = pattern.text, color = AccentPrimary, emoji = "🔵", actionLabel = "Reduce", onAction = { })
+            }
+        }
+        if (alerts.isEmpty() && opportunities.isEmpty() && patterns.isEmpty()) {
+            item {
+                viewModel.generateSpendSenseInsight()?.let { insight ->
+                    ExpandableInsightBanner(insight = insight, viewModel = viewModel, insights = insights)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun InsightBanner(insight: String, color: Color, emoji: String) {
+private fun InsightBanner(
+    insight: String,
+    color: Color,
+    emoji: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f)),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
     ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(emoji, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.width(12.dp))
-            Text(insight, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+            Column(Modifier.weight(1f)) {
+                Text(insight, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                if (actionLabel != null && onAction != null) {
+                    TextButton(
+                        onClick = onAction,
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text(actionLabel, style = MaterialTheme.typography.labelMedium, color = color)
+                    }
+                }
+            }
         }
     }
 }

@@ -865,13 +865,17 @@ data class AccountItemResponse(
 )
 
 @kotlinx.serialization.Serializable
+data class DailySpendItem(val date: String = "", val amount: Double = 0.0)
+
+@kotlinx.serialization.Serializable
 data class InsightsResponse(
     val time_series: List<TimeSeriesPoint> = emptyList(),
     val category_breakdown: List<CategoryBreakdownItem> = emptyList(),
     val spending_trends: List<SpendingTrendItem> = emptyList(),
     val recurring_transactions: List<RecurringItem> = emptyList(),
     val spending_patterns: List<SpendingPatternItem> = emptyList(),
-    val top_merchants: List<TopMerchantItem> = emptyList()
+    val top_merchants: List<TopMerchantItem> = emptyList(),
+    val daily_spend: List<DailySpendItem> = emptyList()
 )
 
 @kotlinx.serialization.Serializable
