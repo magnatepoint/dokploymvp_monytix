@@ -124,30 +124,38 @@ async def compute_moments(
 @router.get("/nudges/diagnose", summary="Diagnose nudge pipeline (why no nudges)")
 async def diagnose_nudges(
     as_of_date: date | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
     service: MoneyMomentsService = Depends(get_service),
 ) -> dict[str, Any]:
     """
-    Return has_signal_today, pending_candidates, delivered_count, suggestion
-    so the app or support can see why there are no nudges.
+    Return has_signal_today, pending_candidates, delivered_count, suggestion.
+    Use from_date and to_date for range, or as_of_date for a single day (default today).
     """
     return await service.get_nudge_pipeline_diagnosis(
-        firebase_uid_to_uuid(user.user_id), as_of_date
+        firebase_uid_to_uuid(user.user_id),
+        as_of_date,
+        from_date,
+        to_date,
     )
 
 
 @router.get("/nudges", summary="Get recent nudges")
 async def get_nudges(
     limit: int = 20,
+    from_date: date | None = None,
+    to_date: date | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
     service: MoneyMomentsService = Depends(get_service),
 ) -> dict[str, Any]:
-    """Get recent nudges delivered to the user."""
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    logger.info(f"GET /nudges - user_id={user.user_id}, limit={limit}")
-    nudges = await service.get_nudges(firebase_uid_to_uuid(user.user_id), limit)
+    """Get recent nudges delivered to the user, optionally filtered by sent_at range."""
+    logger.info(
+        f"GET /nudges - user_id={user.user_id}, limit={limit}, from_date={from_date}, to_date={to_date}"
+    )
+    nudges = await service.get_nudges(
+        firebase_uid_to_uuid(user.user_id), limit, from_date, to_date
+    )
     logger.info(f"Returning {len(nudges)} nudges for user {user.user_id}")
     return {"nudges": nudges}
 
@@ -172,15 +180,30 @@ async def log_nudge_interaction(
 @router.post("/nudges/evaluate", summary="Evaluate rules and queue nudges")
 async def evaluate_nudges(
     as_of_date: date | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
     service: MoneyMomentsService = Depends(get_service),
 ) -> dict[str, Any]:
     """
     Evaluate nudge rules for the user and create candidates.
-    Typically called by a scheduled job, but can be triggered manually.
+    Use from_date and to_date for a date range, or as_of_date for a single day (default today).
     """
-    logger.info(f"POST /nudges/evaluate - user_id={user.user_id}, as_of_date={as_of_date}")
-    result = await service.evaluate_and_queue_nudges(firebase_uid_to_uuid(user.user_id), as_of_date)
+    user_uuid = firebase_uid_to_uuid(user.user_id)
+    if from_date is not None and to_date is not None:
+        logger.info(
+            f"POST /nudges/evaluate - user_id={user.user_id}, from_date={from_date}, to_date={to_date}"
+        )
+        result = await service.evaluate_nudges_range(user_uuid, from_date, to_date)
+    else:
+        logger.info(f"POST /nudges/evaluate - user_id={user.user_id}, as_of_date={as_of_date}")
+        result = await service.evaluate_and_queue_nudges(user_uuid, as_of_date)
+    logger.info(
+        "evaluate -> status=%s reason=%s count=%s",
+        result.get("status"),
+        result.get("reason"),
+        result.get("count", 0),
+    )
     return result
 
 
@@ -198,23 +221,36 @@ async def process_nudges(
     logger.info(f"POST /nudges/process - user_id={user.user_id if user else None}, limit={limit}")
     user_id = firebase_uid_to_uuid(user.user_id) if user else None
     delivered = await service.process_pending_nudges(user_id, limit)
+    logger.info("process -> delivered=%s", len(delivered))
     return {"status": "processed", "delivered": delivered, "count": len(delivered)}
 
 
 @router.post("/signals/compute", summary="Compute daily signal for nudge evaluation")
 async def compute_signal(
     as_of_date: date | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
     user: AuthenticatedUser = Depends(get_current_user),
     service: MoneyMomentsService = Depends(get_service),
 ) -> dict[str, Any]:
     """
     Compute daily signal for a user.
-    This aggregates spending data needed for nudge rule evaluation.
+    Use from_date and to_date for a date range, or as_of_date for a single day (default today).
     """
+    user_uuid = firebase_uid_to_uuid(user.user_id)
+    if from_date is not None and to_date is not None:
+        logger.info(
+            f"POST /signals/compute - user_id={user.user_id}, from_date={from_date}, to_date={to_date}"
+        )
+        result = await service.compute_signal_range(user_uuid, from_date, to_date)
+        logger.info("signals/compute -> status=computed range days=%s", result.get("days_computed"))
+        return result
     logger.info(f"POST /signals/compute - user_id={user.user_id}, as_of_date={as_of_date}")
-    signal = await service.compute_daily_signal(firebase_uid_to_uuid(user.user_id), as_of_date)
+    signal = await service.compute_daily_signal(user_uuid, as_of_date)
     if not signal:
+        logger.info("signals/compute -> status=no_data")
         return {"status": "no_data", "signal": None}
+    logger.info("signals/compute -> status=computed")
     return {"status": "computed", "signal": signal}
 
 

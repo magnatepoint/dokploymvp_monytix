@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 
 data class MoneyMomentsUiState(
     val moments: List<MoneyMoment> = emptyList(),
@@ -25,7 +26,9 @@ data class MoneyMomentsUiState(
     val isEvaluating: Boolean = false,
     val isComputing: Boolean = false,
     val actionError: String? = null,
-    val actionMessage: String? = null
+    val actionMessage: String? = null,
+    val nudgeFromDate: String? = null,
+    val nudgeToDate: String? = null
 )
 
 data class ProgressMetrics(
@@ -44,6 +47,20 @@ class MoneyMomentsViewModel : ViewModel() {
 
     private suspend fun getAccessToken(): String? =
         FirebaseAuthManager.getIdToken()
+
+    /** Default nudge range: last 7 days (from = today-6, to = today). */
+    private fun defaultNudgeFromDate(): String = LocalDate.now().minusDays(6).toString()
+    private fun defaultNudgeToDate(): String = LocalDate.now().toString()
+
+    /** Effective from/to for API calls; uses state range or default last 7 days. */
+    private fun nudgeRangeFrom(state: MoneyMomentsUiState): String =
+        state.nudgeFromDate ?: defaultNudgeFromDate()
+    private fun nudgeRangeTo(state: MoneyMomentsUiState): String =
+        state.nudgeToDate ?: defaultNudgeToDate()
+
+    fun setNudgeDateRange(fromDate: String, toDate: String) {
+        _uiState.update { it.copy(nudgeFromDate = fromDate, nudgeToDate = toDate) }
+    }
 
     init {
         loadSession()
@@ -81,11 +98,17 @@ class MoneyMomentsViewModel : ViewModel() {
                     nudgesError = null
                 )
             }
+            val state = _uiState.value
+            val from = nudgeRangeFrom(state)
+            val to = nudgeRangeTo(state)
+            if (state.nudgeFromDate == null || state.nudgeToDate == null) {
+                _uiState.update { it.copy(nudgeFromDate = from, nudgeToDate = to) }
+            }
             val momentsResult = withContext(Dispatchers.IO) {
                 BackendApi.getMoments(token, month = null, allMonths = false)
             }
             val nudgesResult = withContext(Dispatchers.IO) {
-                BackendApi.getNudges(token, limit = 20)
+                BackendApi.getNudges(token, limit = 20, fromDate = from, toDate = to)
             }
             val loadedNudges = nudgesResult.getOrNull()?.nudges ?: emptyList()
             _uiState.update {
@@ -100,7 +123,7 @@ class MoneyMomentsViewModel : ViewModel() {
             }
             if (loadedNudges.isEmpty()) {
                 val diagnoseResult = withContext(Dispatchers.IO) {
-                    BackendApi.getNudgeDiagnose(token)
+                    BackendApi.getNudgeDiagnose(token, fromDate = from, toDate = to)
                 }
                 diagnoseResult.getOrNull()?.let { d ->
                     val hint = when (d.suggestion) {
@@ -120,8 +143,12 @@ class MoneyMomentsViewModel : ViewModel() {
                     hasAutoRunPipelineThisSession = true
                     _uiState.update { it.copy(isEvaluating = true, actionError = null, actionMessage = null) }
                     try {
-                        withContext(Dispatchers.IO) { BackendApi.computeSignal(token, null) }
-                        withContext(Dispatchers.IO) { BackendApi.evaluateNudges(token, null) }
+                        withContext(Dispatchers.IO) {
+                            BackendApi.computeSignal(token, fromDate = from, toDate = to)
+                        }
+                        withContext(Dispatchers.IO) {
+                            BackendApi.evaluateNudges(token, fromDate = from, toDate = to)
+                        }
                         _uiState.update { it.copy(isEvaluating = false, isComputing = true) }
                         withContext(Dispatchers.IO) { BackendApi.processNudges(token, 10) }
                         _uiState.update { it.copy(isComputing = false) }
@@ -181,15 +208,17 @@ class MoneyMomentsViewModel : ViewModel() {
                 }
                 return@launch
             }
+            val from = nudgeRangeFrom(_uiState.value)
+            val to = nudgeRangeTo(_uiState.value)
             _uiState.update {
                 it.copy(isEvaluating = true, actionError = null, actionMessage = null)
             }
             try {
                 withContext(Dispatchers.IO) {
-                    BackendApi.computeSignal(token, null)
+                    BackendApi.computeSignal(token, fromDate = from, toDate = to)
                 }
                 val evalResult = withContext(Dispatchers.IO) {
-                    BackendApi.evaluateNudges(token, null)
+                    BackendApi.evaluateNudges(token, fromDate = from, toDate = to)
                 }
                 _uiState.update { it.copy(isEvaluating = false) }
                 _uiState.update { it.copy(isComputing = true) }

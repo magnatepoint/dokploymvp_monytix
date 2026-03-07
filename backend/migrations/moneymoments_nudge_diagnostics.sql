@@ -69,3 +69,26 @@ GROUP BY status;
 SELECT count(*) AS users_with_signal_today
 FROM moneymoments.mm_signal_daily
 WHERE as_of_date = current_date;
+
+-- =============================================================================
+-- User-specific diagnostics (replace the UUID with target user's internal UUID)
+-- Firebase UID -> UUID: use app.core.user_id.firebase_uid_to_uuid (uuid5)
+-- Example: r1Q3QF41FzeadgdzI7BybzuPWMZ2 -> 74ffdd16-d034-5b9b-bb24-9fc9a79058a5
+-- =============================================================================
+
+-- 8) Signal for this user today (0 rows = no signal; 1 row = inspect signal vs rules)
+SELECT * FROM moneymoments.mm_signal_daily
+WHERE user_id = '74ffdd16-d034-5b9b-bb24-9fc9a79058a5' AND as_of_date = current_date;
+
+-- 9) Candidates for this user today (pending = process should pick up; none = evaluate created none or already consumed)
+SELECT status, count(*) AS cnt
+FROM moneymoments.mm_nudge_candidate
+WHERE user_id = '74ffdd16-d034-5b9b-bb24-9fc9a79058a5' AND as_of_date = current_date
+GROUP BY status;
+
+-- 10) Recent deliveries for this user (0 rows = GET /nudges correctly returns 0; rows but app shows 0 = read path / auth mismatch)
+SELECT delivery_id, rule_id, sent_at, send_status
+FROM moneymoments.mm_nudge_delivery_log
+WHERE user_id = '74ffdd16-d034-5b9b-bb24-9fc9a79058a5'
+ORDER BY sent_at DESC
+LIMIT 5;

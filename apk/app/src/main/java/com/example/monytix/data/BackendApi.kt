@@ -572,10 +572,17 @@ object BackendApi {
 
     suspend fun getNudges(
         accessToken: String,
-        limit: Int = 20
+        limit: Int = 20,
+        fromDate: String? = null,
+        toDate: String? = null
     ): Result<NudgesResponse> = withContext(Dispatchers.IO) {
         try {
-            val response = client.get("$moneymomentsBase/nudges?limit=$limit") {
+            val query = buildString {
+                append("limit=$limit")
+                if (fromDate != null) append("&from_date=$fromDate")
+                if (toDate != null) append("&to_date=$toDate")
+            }
+            val response = client.get("$moneymomentsBase/nudges?$query") {
                 header("Authorization", "Bearer $accessToken")
             }.body<NudgesResponse>()
             Result.success(response)
@@ -585,10 +592,25 @@ object BackendApi {
     }
 
     suspend fun getNudgeDiagnose(
-        accessToken: String
+        accessToken: String,
+        asOfDate: String? = null,
+        fromDate: String? = null,
+        toDate: String? = null
     ): Result<NudgeDiagnoseResponse> = withContext(Dispatchers.IO) {
         try {
-            val response = client.get("$moneymomentsBase/nudges/diagnose") {
+            val query = buildString {
+                if (asOfDate != null) append("as_of_date=$asOfDate")
+                if (fromDate != null) {
+                    if (length > 0) append("&")
+                    append("from_date=$fromDate")
+                }
+                if (toDate != null) {
+                    if (length > 0) append("&")
+                    append("to_date=$toDate")
+                }
+            }
+            val url = if (query.isNotEmpty()) "$moneymomentsBase/nudges/diagnose?$query" else "$moneymomentsBase/nudges/diagnose"
+            val response = client.get(url) {
                 header("Authorization", "Bearer $accessToken")
             }.body<NudgeDiagnoseResponse>()
             Result.success(response)
@@ -618,10 +640,23 @@ object BackendApi {
 
     suspend fun evaluateNudges(
         accessToken: String,
-        asOfDate: String? = null
+        asOfDate: String? = null,
+        fromDate: String? = null,
+        toDate: String? = null
     ): Result<EvaluateNudgesResponse> = withContext(Dispatchers.IO) {
         try {
-            val url = if (asOfDate != null) "$moneymomentsBase/nudges/evaluate?as_of_date=$asOfDate" else "$moneymomentsBase/nudges/evaluate"
+            val query = buildString {
+                if (asOfDate != null) append("as_of_date=$asOfDate")
+                if (fromDate != null) {
+                    if (length > 0) append("&")
+                    append("from_date=$fromDate")
+                }
+                if (toDate != null) {
+                    if (length > 0) append("&")
+                    append("to_date=$toDate")
+                }
+            }
+            val url = if (query.isNotEmpty()) "$moneymomentsBase/nudges/evaluate?$query" else "$moneymomentsBase/nudges/evaluate"
             val response = client.post(url) {
                 header("Authorization", "Bearer $accessToken")
             }.body<EvaluateNudgesResponse>()
@@ -647,10 +682,23 @@ object BackendApi {
 
     suspend fun computeSignal(
         accessToken: String,
-        asOfDate: String? = null
+        asOfDate: String? = null,
+        fromDate: String? = null,
+        toDate: String? = null
     ): Result<ComputeSignalResponse> = withContext(Dispatchers.IO) {
         try {
-            val url = if (asOfDate != null) "$moneymomentsBase/signals/compute?as_of_date=$asOfDate" else "$moneymomentsBase/signals/compute"
+            val query = buildString {
+                if (asOfDate != null) append("as_of_date=$asOfDate")
+                if (fromDate != null) {
+                    if (length > 0) append("&")
+                    append("from_date=$fromDate")
+                }
+                if (toDate != null) {
+                    if (length > 0) append("&")
+                    append("to_date=$toDate")
+                }
+            }
+            val url = if (query.isNotEmpty()) "$moneymomentsBase/signals/compute?$query" else "$moneymomentsBase/signals/compute"
             val response = client.post(url) {
                 header("Authorization", "Bearer $accessToken")
             }.body<ComputeSignalResponse>()
@@ -1211,7 +1259,9 @@ data class NudgeDiagnoseResponse(
     val has_signal_today: Boolean = false,
     val pending_candidates: Int = 0,
     val delivered_count: Int = 0,
-    val suggestion: String = ""
+    val suggestion: String = "",
+    val from_date: String? = null,
+    val to_date: String? = null
 )
 
 @kotlinx.serialization.Serializable
@@ -1225,7 +1275,9 @@ data class EvaluateNudgesResponse(
     val status: String = "",
     val count: Int = 0,
     val candidates: List<String>? = null,
-    val reason: String? = null
+    val reason: String? = null,
+    val from_date: String? = null,
+    val to_date: String? = null
 )
 
 @kotlinx.serialization.Serializable
@@ -1238,7 +1290,10 @@ data class ProcessNudgesResponse(
 @kotlinx.serialization.Serializable
 data class ComputeSignalResponse(
     val status: String = "",
-    val signal: Map<String, String>? = null
+    val signal: Map<String, String>? = null,
+    val from_date: String? = null,
+    val to_date: String? = null,
+    val days_computed: Int? = null
 )
 
 // BudgetPilot types

@@ -1,7 +1,7 @@
 """MoneyMoments service layer."""
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -44,12 +44,16 @@ class MoneyMomentsService:
             raise
 
     async def get_nudges(
-        self, user_id: UUID, limit: int = 20
+        self,
+        user_id: UUID,
+        limit: int = 20,
+        from_date: date | None = None,
+        to_date: date | None = None,
     ) -> list[dict[str, Any]]:
-        """Get recent nudges delivered to a user."""
+        """Get recent nudges delivered to a user, optionally filtered by sent_at range."""
         async with self.pool.acquire() as conn:
             repo = MoneyMomentsRepository(conn)
-            nudges = await repo.get_user_nudges(user_id, limit)
+            nudges = await repo.get_user_nudges(user_id, limit, from_date, to_date)
             
             # Render templates if metadata contains rendered content
             # Otherwise, render templates on-the-fly
@@ -102,12 +106,18 @@ class MoneyMomentsService:
             await repo.log_nudge_interaction(user_id, delivery_id, event_type, metadata)
 
     async def get_nudge_pipeline_diagnosis(
-        self, user_id: UUID, as_of_date: date | None = None
+        self,
+        user_id: UUID,
+        as_of_date: date | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
     ) -> dict[str, Any]:
-        """Return diagnosis for why nudges may be empty (has_signal_today, pending_candidates, delivered_count, suggestion)."""
+        """Return diagnosis for why nudges may be empty. Use from_date/to_date for range, else as_of_date (today)."""
         async with self.pool.acquire() as conn:
             repo = MoneyMomentsRepository(conn)
-            return await repo.get_nudge_pipeline_diagnosis(user_id, as_of_date)
+            return await repo.get_nudge_pipeline_diagnosis(
+                user_id, as_of_date, from_date, to_date
+            )
 
     async def evaluate_and_queue_nudges(
         self, user_id: UUID, as_of_date: date | None = None
@@ -152,6 +162,44 @@ class MoneyMomentsService:
         async with self.pool.acquire() as conn:
             repo = MoneyMomentsRepository(conn)
             return await repo.compute_daily_signal(user_id, as_of_date)
+
+    async def compute_signal_range(
+        self, user_id: UUID, from_date: date, to_date: date
+    ) -> dict[str, Any]:
+        """Compute daily signal for each date in [from_date, to_date]. Returns summary."""
+        days_computed = 0
+        for d in range((to_date - from_date).days + 1):
+            as_of = from_date + timedelta(days=d)
+            result = await self.compute_daily_signal(user_id, as_of)
+            if result is not None:
+                days_computed += 1
+        return {
+            "status": "computed",
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "days_computed": days_computed,
+        }
+
+    async def evaluate_nudges_range(
+        self, user_id: UUID, from_date: date, to_date: date
+    ) -> dict[str, Any]:
+        """Evaluate rules for each date in [from_date, to_date]. Returns aggregated result."""
+        total_queued = 0
+        last_reason: str | None = None
+        for d in range((to_date - from_date).days + 1):
+            as_of = from_date + timedelta(days=d)
+            result = await self.evaluate_and_queue_nudges(user_id, as_of)
+            if result.get("status") == "queued":
+                total_queued += result.get("count", 0)
+            elif result.get("status") == "no_candidates":
+                last_reason = result.get("reason")
+        return {
+            "status": "queued" if total_queued > 0 else "no_candidates",
+            "count": total_queued,
+            "reason": last_reason,
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+        }
 
     async def process_pending_nudges(
         self, user_id: UUID | None = None, limit: int = 10

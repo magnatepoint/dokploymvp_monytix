@@ -107,11 +107,14 @@ class MoneyMomentsRepository:
             )
 
     async def get_user_nudges(
-        self, user_id: UUID, limit: int = 20
+        self,
+        user_id: UUID,
+        limit: int = 20,
+        from_date: date | None = None,
+        to_date: date | None = None,
     ) -> list[dict[str, Any]]:
-        """Get recent nudges delivered to a user."""
-        rows = await self.conn.fetch(
-            """
+        """Get recent nudges delivered to a user, optionally filtered by sent_at range."""
+        query = """
             SELECT 
                 d.delivery_id,
                 d.user_id,
@@ -130,12 +133,28 @@ class MoneyMomentsRepository:
             JOIN moneymoments.mm_nudge_template_master t ON t.template_code = d.template_code
             JOIN moneymoments.mm_nudge_rule_master r ON r.rule_id = d.rule_id
             WHERE d.user_id = $1
-            ORDER BY d.sent_at DESC
-            LIMIT $2
-            """,
-            user_id,
-            limit,
-        )
+        """
+        params: list[Any] = [user_id]
+        if from_date is not None:
+            query += " AND d.sent_at >= $2::date"
+            params.append(from_date)
+            if to_date is not None:
+                # inclusive end: sent_at date <= to_date
+                query += " AND d.sent_at::date <= $3::date"
+                params.append(to_date)
+                query += " ORDER BY d.sent_at DESC LIMIT $4"
+                params.append(limit)
+            else:
+                query += " ORDER BY d.sent_at DESC LIMIT $3"
+                params.append(limit)
+        elif to_date is not None:
+            query += " AND d.sent_at::date <= $2::date ORDER BY d.sent_at DESC LIMIT $3"
+            params.append(to_date)
+            params.append(limit)
+        else:
+            query += " ORDER BY d.sent_at DESC LIMIT $2"
+            params.append(limit)
+        rows = await self.conn.fetch(query, *params)
         return [dict(row) for row in rows]
 
     async def has_signal_for_date(
@@ -153,26 +172,65 @@ class MoneyMomentsRepository:
         return row is not None
 
     async def get_nudge_pipeline_diagnosis(
-        self, user_id: UUID, as_of_date: date | None = None
+        self,
+        user_id: UUID,
+        as_of_date: date | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
     ) -> dict[str, Any]:
-        """Return has_signal_today, pending_candidates, delivered_count, suggestion for nudge pipeline."""
-        today = as_of_date or date.today()
-        has_signal = await self.has_signal_for_date(user_id, today)
-        pending = await self.conn.fetchval(
-            """
-            SELECT count(*) FROM moneymoments.mm_nudge_candidate
-            WHERE user_id = $1 AND as_of_date = $2 AND status = 'pending'
-            """,
-            user_id,
-            today,
-        )
-        delivered = await self.conn.fetchval(
-            """
-            SELECT count(*) FROM moneymoments.mm_nudge_delivery_log
-            WHERE user_id = $1
-            """,
-            user_id,
-        )
+        """Return has_signal_today (or in range), pending_candidates, delivered_count, suggestion.
+        If from_date and to_date are set, counts are for that range; otherwise single as_of_date (default today).
+        """
+        use_range = from_date is not None and to_date is not None
+        if use_range:
+            # At least one signal day in range
+            has_signal_row = await self.conn.fetchval(
+                """
+                SELECT 1 FROM moneymoments.mm_signal_daily
+                WHERE user_id = $1 AND as_of_date >= $2 AND as_of_date <= $3
+                LIMIT 1
+                """,
+                user_id,
+                from_date,
+                to_date,
+            )
+            has_signal = has_signal_row is not None
+            pending = await self.conn.fetchval(
+                """
+                SELECT count(*) FROM moneymoments.mm_nudge_candidate
+                WHERE user_id = $1 AND as_of_date >= $2 AND as_of_date <= $3 AND status = 'pending'
+                """,
+                user_id,
+                from_date,
+                to_date,
+            )
+            delivered = await self.conn.fetchval(
+                """
+                SELECT count(*) FROM moneymoments.mm_nudge_delivery_log
+                WHERE user_id = $1 AND sent_at::date >= $2 AND sent_at::date <= $3
+                """,
+                user_id,
+                from_date,
+                to_date,
+            )
+        else:
+            today = as_of_date or date.today()
+            has_signal = await self.has_signal_for_date(user_id, today)
+            pending = await self.conn.fetchval(
+                """
+                SELECT count(*) FROM moneymoments.mm_nudge_candidate
+                WHERE user_id = $1 AND as_of_date = $2 AND status = 'pending'
+                """,
+                user_id,
+                today,
+            )
+            delivered = await self.conn.fetchval(
+                """
+                SELECT count(*) FROM moneymoments.mm_nudge_delivery_log
+                WHERE user_id = $1
+                """,
+                user_id,
+            )
         pending_count = int(pending) if pending is not None else 0
         delivered_count = int(delivered) if delivered is not None else 0
         if delivered_count > 0:
@@ -188,6 +246,8 @@ class MoneyMomentsRepository:
             "pending_candidates": pending_count,
             "delivered_count": delivered_count,
             "suggestion": suggestion,
+            "from_date": from_date.isoformat() if from_date else None,
+            "to_date": to_date.isoformat() if to_date else None,
         }
 
     async def log_nudge_interaction(
