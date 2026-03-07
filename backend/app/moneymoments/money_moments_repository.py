@@ -263,12 +263,12 @@ class MoneyMomentsRepository:
             """
             INSERT INTO moneymoments.mm_nudge_interaction_log
                 (delivery_id, user_id, event_type, metadata_json)
-            VALUES ($1, $2, $3, $4)
+            VALUES ($1, $2, $3, $4::jsonb)
             """,
             delivery_id,
             user_id,
             event_type,
-            metadata or {},
+            json.dumps(metadata or {}),
         )
 
     async def create_nudge_candidates(
@@ -335,7 +335,7 @@ class MoneyMomentsRepository:
             """
             INSERT INTO moneymoments.mm_nudge_delivery_log
                 (candidate_id, user_id, rule_id, template_code, channel, send_status, metadata_json)
-            VALUES ($1, $2, $3, $4, $5, 'success', $6)
+            VALUES ($1, $2, $3, $4, $5, 'success', $6::jsonb)
             RETURNING delivery_id
             """,
             candidate_id,
@@ -343,7 +343,7 @@ class MoneyMomentsRepository:
             rule_id,
             template_code,
             channel,
-            metadata or {},
+            json.dumps(metadata or {}),
         )
         
         # Update candidate status
