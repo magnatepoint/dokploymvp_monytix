@@ -449,12 +449,12 @@ class MoneyMomentsRepository:
                     b.user_id,
                     CASE 
                         WHEN b.planned_wants_amt > 0 
-                        THEN (b.wants_amt / b.planned_wants_amt)::NUMERIC(6,3)
+                        THEN LEAST(GREATEST((b.wants_amt / b.planned_wants_amt)::numeric, -999.999), 999.999)::NUMERIC(6,3)
                         ELSE NULL
                     END AS wants_vs_plan_pct,
                     CASE 
                         WHEN b.planned_assets_amt > 0 
-                        THEN (b.assets_amt / b.planned_assets_amt)::NUMERIC(6,3)
+                        THEN LEAST(GREATEST((b.assets_amt / b.planned_assets_amt)::numeric, -999.999), 999.999)::NUMERIC(6,3)
                         ELSE NULL
                     END AS assets_vs_plan_pct
                 FROM budgetpilot.budget_user_month_aggregate b
@@ -483,7 +483,7 @@ class MoneyMomentsRepository:
                 COALESCE(w30.travel_spend_30d, 0) AS travel_spend_30d,
                 CASE 
                     WHEN w30.income_total_30d > 0 
-                    THEN (w30.wants_total_30d / w30.income_total_30d)::NUMERIC(6,3)
+                    THEN LEAST(GREATEST((w30.wants_total_30d / w30.income_total_30d)::numeric, -999.999), 999.999)::NUMERIC(6,3)
                     ELSE NULL
                 END AS wants_share_30d,
                 0::INTEGER AS recurring_merchants_90d,
@@ -492,7 +492,7 @@ class MoneyMomentsRepository:
                 COALESCE(gu.rank1_goal_underfund_amt, 0) AS rank1_goal_underfund_amt,
                 CASE 
                     WHEN gu.rank1_goal_underfund_amt > 0 AND w30.income_total_30d > 0
-                    THEN (gu.rank1_goal_underfund_amt / w30.income_total_30d)::NUMERIC(6,3)
+                    THEN LEAST(GREATEST((gu.rank1_goal_underfund_amt / w30.income_total_30d)::numeric, -999.999), 999.999)::NUMERIC(6,3)
                     ELSE NULL
                 END AS rank1_goal_underfund_pct
             FROM win_7 w7
