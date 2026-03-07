@@ -138,6 +138,58 @@ class MoneyMomentsRepository:
         )
         return [dict(row) for row in rows]
 
+    async def has_signal_for_date(
+        self, user_id: UUID, as_of_date: date
+    ) -> bool:
+        """Return True if mm_signal_daily has a row for this user and date."""
+        row = await self.conn.fetchrow(
+            """
+            SELECT 1 FROM moneymoments.mm_signal_daily
+            WHERE user_id = $1 AND as_of_date = $2
+            """,
+            user_id,
+            as_of_date,
+        )
+        return row is not None
+
+    async def get_nudge_pipeline_diagnosis(
+        self, user_id: UUID, as_of_date: date | None = None
+    ) -> dict[str, Any]:
+        """Return has_signal_today, pending_candidates, delivered_count, suggestion for nudge pipeline."""
+        today = as_of_date or date.today()
+        has_signal = await self.has_signal_for_date(user_id, today)
+        pending = await self.conn.fetchval(
+            """
+            SELECT count(*) FROM moneymoments.mm_nudge_candidate
+            WHERE user_id = $1 AND as_of_date = $2 AND status = 'pending'
+            """,
+            user_id,
+            today,
+        )
+        delivered = await self.conn.fetchval(
+            """
+            SELECT count(*) FROM moneymoments.mm_nudge_delivery_log
+            WHERE user_id = $1
+            """,
+            user_id,
+        )
+        pending_count = int(pending) if pending is not None else 0
+        delivered_count = int(delivered) if delivered is not None else 0
+        if delivered_count > 0:
+            suggestion = "ok"
+        elif pending_count > 0:
+            suggestion = "run_evaluate_process"
+        elif not has_signal:
+            suggestion = "no_signal"
+        else:
+            suggestion = "no_rule_matched"
+        return {
+            "has_signal_today": has_signal,
+            "pending_candidates": pending_count,
+            "delivered_count": delivered_count,
+            "suggestion": suggestion,
+        }
+
     async def log_nudge_interaction(
         self,
         user_id: UUID,
@@ -393,7 +445,48 @@ class MoneyMomentsRepository:
         )
 
         if not signal_data:
-            return None
+            # User has no transactions in window; insert default signal row so evaluate can run
+            # (e.g. GOAL_UNDERFUNDED can still match if goal data exists)
+            goal_row = await self.conn.fetchrow(
+                """
+                SELECT COALESCE(MAX(GREATEST(0, g.estimated_cost - g.current_savings)), 0) AS rank1_goal_underfund_amt
+                FROM goal.user_goals_master g
+                WHERE g.user_id = $1 AND g.status = 'active' AND g.priority_rank = 1
+                """,
+                user_id,
+            )
+            rank1_amt = float(goal_row["rank1_goal_underfund_amt"]) if goal_row else 0.0
+            await self.conn.execute(
+                """
+                INSERT INTO moneymoments.mm_signal_daily
+                    (user_id, as_of_date, dining_txn_7d, dining_spend_7d, shopping_txn_7d, shopping_spend_7d,
+                     travel_txn_30d, travel_spend_30d, wants_share_30d, recurring_merchants_90d,
+                     wants_vs_plan_pct, assets_vs_plan_pct, rank1_goal_underfund_amt, rank1_goal_underfund_pct)
+                VALUES ($1, $2, 0, 0, 0, 0, 0, 0, NULL, 0, NULL, NULL, $3, NULL)
+                ON CONFLICT (user_id, as_of_date) DO UPDATE SET
+                    dining_txn_7d = 0, dining_spend_7d = 0, shopping_txn_7d = 0, shopping_spend_7d = 0,
+                    travel_txn_30d = 0, travel_spend_30d = 0, wants_share_30d = EXCLUDED.wants_share_30d,
+                    recurring_merchants_90d = 0, wants_vs_plan_pct = EXCLUDED.wants_vs_plan_pct,
+                    assets_vs_plan_pct = EXCLUDED.assets_vs_plan_pct,
+                    rank1_goal_underfund_amt = EXCLUDED.rank1_goal_underfund_amt,
+                    rank1_goal_underfund_pct = EXCLUDED.rank1_goal_underfund_pct
+                """,
+                user_id,
+                as_of_date,
+                rank1_amt,
+            )
+            row = await self.conn.fetchrow(
+                """
+                SELECT user_id, as_of_date, dining_txn_7d, dining_spend_7d, shopping_txn_7d, shopping_spend_7d,
+                       travel_txn_30d, travel_spend_30d, wants_share_30d, recurring_merchants_90d,
+                       wants_vs_plan_pct, assets_vs_plan_pct, rank1_goal_underfund_amt, rank1_goal_underfund_pct
+                FROM moneymoments.mm_signal_daily
+                WHERE user_id = $1 AND as_of_date = $2
+                """,
+                user_id,
+                as_of_date,
+            )
+            return dict(row) if row else None
 
         signal_dict = dict(signal_data)
 

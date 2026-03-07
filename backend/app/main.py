@@ -20,6 +20,8 @@ from .gmail import test_routes as gmail_test_routes
 from .goals import routes as goals_routes
 from .budgetpilot import routes as budgetpilot_routes
 from .moneymoments import routes as moneymoments_routes
+from .forecast import router as forecast_router
+from .assistant import router as assistant_router
 from .realtime_subscriber import redis_events_listener
 
 # Import rules to trigger auto-registration
@@ -185,6 +187,8 @@ def create_app() -> FastAPI:
     application.include_router(goals_routes.router)
     application.include_router(budgetpilot_routes.router)
     application.include_router(moneymoments_routes.router)
+    application.include_router(forecast_router)
+    application.include_router(assistant_router)
     application.include_router(ws_routes.router)
     return application
 

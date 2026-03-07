@@ -2086,23 +2086,32 @@ class SpendSenseService:
             for row in time_series_rows
         ]
         
-        # 2. Category breakdown (current period)
+        # 2. Category breakdown (current period) – use txn_override when user has edited category
         category_rows = await self._pool.fetch(
             """
             SELECT 
-                COALESCE(te.category_id, 'uncategorized') AS category_code,
-                COALESCE(dc.category_name, 'Uncategorized') AS category_name,
+                COALESCE(ov.category_code, te.category_id, 'uncategorized') AS category_code,
+                COALESCE(dc_override.category_name, dc.category_name, ov.category_code, te.category_id, 'Uncategorized') AS category_name,
                 COUNT(*) AS txn_count,
                 SUM(CASE WHEN tf.direction = 'debit' THEN tf.amount ELSE 0 END) AS total_amount
             FROM spendsense.txn_fact tf
             LEFT JOIN spendsense.txn_parsed tp ON tp.fact_txn_id = tf.txn_id
             LEFT JOIN spendsense.txn_enriched te ON te.parsed_id = tp.parsed_id
+            LEFT JOIN LATERAL (
+                SELECT category_code
+                FROM spendsense.txn_override
+                WHERE txn_id = tf.txn_id AND user_id = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+            ) ov ON TRUE
             LEFT JOIN spendsense.dim_category dc ON dc.category_code = te.category_id
+            LEFT JOIN spendsense.dim_category dc_override ON dc_override.category_code = ov.category_code
             WHERE tf.user_id = $1
               AND tf.txn_date >= $2
               AND tf.txn_date <= $3
               AND tf.direction = 'debit'
-            GROUP BY te.category_id, dc.category_name
+            GROUP BY COALESCE(ov.category_code, te.category_id, 'uncategorized'),
+                     COALESCE(dc_override.category_name, dc.category_name, ov.category_code, te.category_id, 'Uncategorized')
             HAVING SUM(CASE WHEN tf.direction = 'debit' THEN tf.amount ELSE 0 END) > 0
             ORDER BY total_amount DESC
             """,
@@ -2125,20 +2134,25 @@ class SpendSenseService:
             for row in category_rows
         ]
         
-        # 3. Spending trends (monthly breakdown by needs/wants/assets)
+        # 3. Spending trends (monthly breakdown by needs/wants/assets) – use txn_override for category
         trend_rows = await self._pool.fetch(
             """
             SELECT 
                 DATE_TRUNC('month', tf.txn_date)::date AS month,
                 SUM(CASE WHEN tf.direction = 'credit' THEN tf.amount ELSE 0 END) AS income,
                 SUM(CASE WHEN tf.direction = 'debit' THEN tf.amount ELSE 0 END) AS expenses,
-                SUM(CASE WHEN tf.direction = 'debit' AND COALESCE(dc.txn_type, 'wants') = 'needs' THEN tf.amount ELSE 0 END) AS needs,
-                SUM(CASE WHEN tf.direction = 'debit' AND COALESCE(dc.txn_type, 'wants') = 'wants' THEN tf.amount ELSE 0 END) AS wants,
-                SUM(CASE WHEN tf.direction = 'debit' AND COALESCE(dc.txn_type, 'wants') = 'assets' THEN tf.amount ELSE 0 END) AS assets
+                SUM(CASE WHEN tf.direction = 'debit' AND COALESCE(dc_eff.txn_type, 'wants') = 'needs' THEN tf.amount ELSE 0 END) AS needs,
+                SUM(CASE WHEN tf.direction = 'debit' AND COALESCE(dc_eff.txn_type, 'wants') = 'wants' THEN tf.amount ELSE 0 END) AS wants,
+                SUM(CASE WHEN tf.direction = 'debit' AND COALESCE(dc_eff.txn_type, 'wants') = 'assets' THEN tf.amount ELSE 0 END) AS assets
             FROM spendsense.txn_fact tf
             LEFT JOIN spendsense.txn_parsed tp ON tp.fact_txn_id = tf.txn_id
             LEFT JOIN spendsense.txn_enriched te ON te.parsed_id = tp.parsed_id
-            LEFT JOIN spendsense.dim_category dc ON dc.category_code = te.category_id
+            LEFT JOIN LATERAL (
+                SELECT category_code FROM spendsense.txn_override
+                WHERE txn_id = tf.txn_id AND user_id = $1
+                ORDER BY created_at DESC LIMIT 1
+            ) ov ON TRUE
+            LEFT JOIN spendsense.dim_category dc_eff ON dc_eff.category_code = COALESCE(ov.category_code, te.category_id)
             WHERE tf.user_id = $1
               AND tf.txn_date >= $2
               AND tf.txn_date <= $3
@@ -2346,4 +2360,99 @@ class SpendSenseService:
             "daily_spend": daily_spend,
             "anomalies": None,  # TODO: Implement anomaly detection
         }
+
+    async def get_top_insights(self, user_id: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Derive top N insights for command-center Home from KPIs + insights (mirrors client generateAiInsights)."""
+        from datetime import timedelta
+
+        today = date.today()
+        start_of_month = today.replace(day=1)
+        end_of_month = (start_of_month.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        insights = await self.get_insights(user_id, start_date=start_of_month, end_date=end_of_month)
+        kpis = await self.get_kpis(user_id, month=start_of_month.strftime("%Y-%m"))
+
+        income = kpis.income_amount or 0
+        expenses = kpis.total_debits_amount or (kpis.needs_amount or 0) + (kpis.wants_amount or 0)
+        surplus = income - expenses
+        breakdown = insights.get("category_breakdown") or []
+        list_insights: list[dict[str, Any]] = []
+
+        emi_cat = next(
+            (c for c in breakdown if "emi" in (c.get("category_name") or "").lower() or "loan" in (c.get("category_name") or "").lower()),
+            None,
+        )
+        if emi_cat and income > 0:
+            emi_pct = (emi_cat["amount"] / income) * 100
+            if emi_pct >= 30:
+                list_insights.append({
+                    "id": "risk_emi",
+                    "title": "Risk",
+                    "message": f"EMIs consume {int(emi_pct)}% of your income. Consider refinancing or prepayment.",
+                    "type": "risk",
+                    "confidence": 0.9,
+                })
+
+        if surplus > 5000 and income > 0:
+            safe_sip = int(surplus * 0.3)
+            list_insights.append({
+                "id": "opt_sip",
+                "title": "Optimization",
+                "message": f"You can increase SIP by ₹{safe_sip:,} safely.",
+                "type": "optimization",
+                "confidence": 0.85,
+            })
+
+        top_cat = (kpis.top_categories or [])[0] if kpis.top_categories else None
+        if top_cat and (top_cat.spend_amount or 0) > 50000:
+            name = (top_cat.category_name or top_cat.category_code or "spending").lower()
+            list_insights.append({
+                "id": "1",
+                "title": "Risk",
+                "message": f"Your spending on {name} is high. Consider setting a limit.",
+                "type": "risk",
+                "confidence": 0.8,
+            })
+
+        transfer_cat = next((c for c in breakdown if "transfer" in (c.get("category_name") or "").lower()), None)
+        if transfer_cat and breakdown:
+            avg = sum(c["amount"] for c in breakdown) / len(breakdown)
+            if transfer_cat["amount"] > avg * 1.3:
+                list_insights.append({
+                    "id": "pattern",
+                    "title": "Pattern",
+                    "message": "You spend most on transfers between 1st–5th. Plan ahead for those dates.",
+                    "type": "pattern",
+                    "confidence": 0.75,
+                })
+
+        food_cat = next((c for c in breakdown if "food" in (c.get("category_name") or "").lower() or "dining" in (c.get("category_name") or "").lower()), None)
+        if food_cat and food_cat.get("percentage", 0) > 25:
+            save_amt = int(food_cat["amount"] * 0.15)
+            list_insights.append({
+                "id": "3",
+                "title": "Budget Tip",
+                "message": f"You're spending {int(food_cat['percentage'])}% on {food_cat.get('category_name', 'food')}. Meal planning could save ₹{save_amt:,}.",
+                "type": "budget_tip",
+                "confidence": 0.8,
+            })
+
+        if (kpis.assets_amount or 0) > 1_000_000:
+            list_insights.append({
+                "id": "4",
+                "title": "Optimization",
+                "message": "Your portfolio shows strong growth. Consider increasing SIP contributions.",
+                "type": "optimization",
+                "confidence": 0.85,
+            })
+
+        if not list_insights:
+            list_insights.append({
+                "id": "0",
+                "title": "On Track",
+                "message": "Your finances look on track this month. Keep monitoring to stay ahead.",
+                "type": "on_track",
+                "confidence": 0.7,
+            })
+
+        return list_insights[:limit]
 

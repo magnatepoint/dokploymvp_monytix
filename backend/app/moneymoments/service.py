@@ -101,6 +101,14 @@ class MoneyMomentsService:
             repo = MoneyMomentsRepository(conn)
             await repo.log_nudge_interaction(user_id, delivery_id, event_type, metadata)
 
+    async def get_nudge_pipeline_diagnosis(
+        self, user_id: UUID, as_of_date: date | None = None
+    ) -> dict[str, Any]:
+        """Return diagnosis for why nudges may be empty (has_signal_today, pending_candidates, delivered_count, suggestion)."""
+        async with self.pool.acquire() as conn:
+            repo = MoneyMomentsRepository(conn)
+            return await repo.get_nudge_pipeline_diagnosis(user_id, as_of_date)
+
     async def evaluate_and_queue_nudges(
         self, user_id: UUID, as_of_date: date | None = None
     ) -> dict[str, Any]:
@@ -119,7 +127,9 @@ class MoneyMomentsService:
             candidates = await engine.evaluate_rules(user_id, as_of_date)
 
             if not candidates:
-                return {"status": "no_candidates", "count": 0}
+                has_signal = await repo.has_signal_for_date(user_id, as_of_date)
+                reason = "no_signal" if not has_signal else "no_rule_matched"
+                return {"status": "no_candidates", "count": 0, "reason": reason}
 
             # Create candidates in DB
             candidate_ids = await repo.create_nudge_candidates(

@@ -25,6 +25,8 @@ from .models import (
     CategoryResponse,
     SubcategoryResponse,
     AvailableMonthsResponse,
+    TopInsightItem,
+    TopInsightsResponse,
 )
 from .etl.parsers import SpendSenseParseError
 from .service import SpendSenseService
@@ -152,11 +154,22 @@ async def get_insights(
 ) -> dict[str, Any]:
     """Get comprehensive insights including time-series, category breakdown, trends, and recurring transactions."""
     from datetime import datetime
-    
+
     start = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
     end = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
-    
+
     return await service.get_insights(user.user_id, start_date=start, end_date=end)
+
+
+@router.get("/insights/top", response_model=TopInsightsResponse, summary="Get top insights for command center")
+async def get_top_insights(
+    limit: int = Query(5, ge=1, le=10, description="Max number of insights to return"),
+    user: AuthenticatedUser = Depends(get_current_user),
+    service: SpendSenseService = Depends(get_service),
+) -> TopInsightsResponse:
+    """Get top N derived insights for Home command center (risk, optimization, patterns, on track)."""
+    items = await service.get_top_insights(user.user_id, limit=limit)
+    return TopInsightsResponse(insights=[TopInsightItem(**x) for x in items])
 
 
 @router.get(

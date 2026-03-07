@@ -118,6 +118,21 @@ async def compute_moments(
     }
 
 
+@router.get("/nudges/diagnose", summary="Diagnose nudge pipeline (why no nudges)")
+async def diagnose_nudges(
+    as_of_date: date | None = None,
+    user: AuthenticatedUser = Depends(get_current_user),
+    service: MoneyMomentsService = Depends(get_service),
+) -> dict[str, Any]:
+    """
+    Return has_signal_today, pending_candidates, delivered_count, suggestion
+    so the app or support can see why there are no nudges.
+    """
+    return await service.get_nudge_pipeline_diagnosis(
+        firebase_uid_to_uuid(user.user_id), as_of_date
+    )
+
+
 @router.get("/nudges", summary="Get recent nudges")
 async def get_nudges(
     limit: int = 20,

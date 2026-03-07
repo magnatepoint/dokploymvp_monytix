@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -2228,12 +2229,16 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedCategoryForSheet by remember { mutableStateOf<CategoryBreakdownItem?>(null) }
     val now = LocalDate.now()
-    val firstOfMonth = now.withDayOfMonth(1).toString()
-    val lastOfMonth = now.with(TemporalAdjusters.lastDayOfMonth()).toString()
+    val selectedMonth = uiState.selectedMonth
 
     LaunchedEffect(Unit) {
-        viewModel.loadInsights(firstOfMonth, lastOfMonth)
         viewModel.loadKpis(null)
+    }
+    LaunchedEffect(selectedMonth) {
+        val ym = selectedMonth?.let { YearMonth.parse(it) } ?: YearMonth.now()
+        val start = ym.atDay(1).toString()
+        val end = ym.atEndOfMonth().toString()
+        viewModel.loadInsights(start, end)
     }
 
     if (uiState.isLoading && uiState.insights == null) {
@@ -2264,7 +2269,7 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
     val dailySpend = insights.daily_spend
     val highestDay = dailySpend.maxByOrNull { it.amount }
     val highestCategory = breakdown.firstOrNull()
-    val currentMonth = YearMonth.from(now)
+    val insightMonth = selectedMonth?.let { YearMonth.parse(it) } ?: YearMonth.now()
     val alerts = viewModel.insightAlerts()
     val opportunities = viewModel.insightOpportunities()
     val patterns = viewModel.insightPatterns()
@@ -2280,61 +2285,71 @@ private fun InsightsTab(viewModel: SpendSenseViewModel) {
         )
     }
 
+    val peakDayLine = highestDay?.let { d ->
+        try {
+            val dayName = LocalDate.parse(d.date).dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())
+            "$dayName (${formatCurrency(d.amount)})"
+        } catch (_: Exception) {
+            formatCurrency(d.amount)
+        }
+    }
+    val highestCategoryPct = highestCategory?.let { (it.percentage).toInt().takeIf { total > 0 } }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("This month at a glance", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-        }
-        item {
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(formatCurrency(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = ChartRed)
-                if (trends.size >= 2) {
-                    Text(
-                        "${if (momPct >= 0) "↑" else "↓"} ${kotlin.math.abs(momPct).toInt()}% vs last month",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (momPct >= 0) ChartRed else Success
-                    )
+                Text("Month:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                Spacer(Modifier.width(12.dp))
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(null as String?).plus(uiState.availableMonths).forEach { month ->
+                        val isSelected = (month == null && selectedMonth == null) || (month != null && month == selectedMonth)
+                        val label = if (month == null) "This month" else formatMonthDisplay(month)
+                        FilterChip(
+                            label = label,
+                            isSelected = isSelected,
+                            onClick = { viewModel.setSelectedMonth(month) }
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(12.dp))
         }
-        if (highestDay != null) {
-            item {
-                Text(
-                    "Highest day: ${formatCurrency(highestDay.amount)} on ${
-                        try {
-                            LocalDate.parse(highestDay.date).format(DateTimeFormatter.ofPattern("MMM d"))
-                        } catch (_: Exception) {
-                            highestDay.date
-                        }
-                    }",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
-                )
-            }
+        item {
+            Text(
+                "${insightMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))} at a glance",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
-        if (highestCategory != null) {
-            item {
-                Text(
-                    "Top category: ${highestCategory.category_name}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
-                )
-            }
+        item {
+            SmartSummaryCard(
+                totalSpend = total,
+                momPct = if (trends.size >= 2) momPct else null,
+                highestCategoryName = highestCategory?.category_name,
+                highestCategoryPct = highestCategoryPct,
+                peakDayLine = peakDayLine
+            )
         }
 
         item {
             Spacer(Modifier.height(8.dp))
-            Text("Patterns", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Text("Weekly Spending Pattern", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
         }
         item {
-            WeekdayMatrix(dailySpend = dailySpend, month = currentMonth)
+            WeekdayMatrix(dailySpend = dailySpend, month = insightMonth)
         }
         item {
             CostlyDayLine(spendingPatterns = insights.spending_patterns)
@@ -2426,12 +2441,14 @@ private fun InsightBanner(
             Column(Modifier.weight(1f)) {
                 Text(insight, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 if (actionLabel != null && onAction != null) {
-                    TextButton(
+                    Button(
                         onClick = onAction,
-                        contentPadding = PaddingValues(0.dp),
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = 8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = color.copy(alpha = 0.25f), contentColor = color),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                     ) {
-                        Text(actionLabel, style = MaterialTheme.typography.labelMedium, color = color)
+                        Text(actionLabel, style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }

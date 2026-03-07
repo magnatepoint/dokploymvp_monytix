@@ -243,6 +243,22 @@ class InsightsResponse(BaseModel):
     anomalies: list[dict[str, Any]] | None = None
 
 
+class TopInsightItem(BaseModel):
+    """Single insight for command-center Home (top 3)."""
+
+    id: str
+    title: str
+    message: str
+    type: str  # risk, optimization, pattern, goal_progress, budget_tip, on_track
+    confidence: float | None = None
+
+
+class TopInsightsResponse(BaseModel):
+    """Top N insights for Home command center."""
+
+    insights: list[TopInsightItem]
+
+
 class AccountItem(BaseModel):
     """Account derived from transaction data (bank_code + account_ref)."""
 
