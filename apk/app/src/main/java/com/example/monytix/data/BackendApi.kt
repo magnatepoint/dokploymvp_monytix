@@ -22,8 +22,21 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.content.TextContent
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -1219,6 +1232,29 @@ data class MoneyMoment(
     val created_at: String = ""
 )
 
+/** Accepts metadata_json as either a JSON object or a JSON string (backend may send either). */
+private object MetadataJsonSerializer : KSerializer<Map<String, String>?> {
+    private val mapSerializer = MapSerializer(String.serializer(), String.serializer())
+    override val descriptor: SerialDescriptor = mapSerializer.descriptor
+    override fun deserialize(decoder: Decoder): Map<String, String>? {
+        val jsonDecoder = decoder as? JsonDecoder ?: return mapSerializer.deserialize(decoder)
+        val el = jsonDecoder.decodeJsonElement()
+        return when (el) {
+            is JsonNull -> null
+            is JsonPrimitive -> {
+                val str = el.content
+                if (str.isBlank()) null else try {
+                    Json.parseToJsonElement(str).jsonObject.mapValues { (_, v) -> v.jsonPrimitive.content }
+                } catch (_: Exception) { null }
+            }
+            is JsonObject -> el.mapValues { (_, v) -> v.jsonPrimitive.content }
+            else -> null
+        }
+    }
+    override fun serialize(encoder: Encoder, value: Map<String, String>?) {
+        if (value == null) encoder.encodeNull() else mapSerializer.serialize(encoder, value)
+    }
+}
 @kotlinx.serialization.Serializable
 data class Nudge(
     val delivery_id: String = "",
@@ -1228,7 +1264,7 @@ data class Nudge(
     val channel: String = "",
     val sent_at: String = "",
     val send_status: String = "",
-    val metadata_json: Map<String, String>? = null,
+    @kotlinx.serialization.SerialName("metadata_json") @kotlinx.serialization.Serializable(with = MetadataJsonSerializer::class) val metadata_json: Map<String, String>? = null,
     val title_template: String? = null,
     val body_template: String? = null,
     val title: String? = null,

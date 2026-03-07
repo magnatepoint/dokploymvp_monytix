@@ -346,7 +346,7 @@ class MoneyMomentsRepository:
             json.dumps(metadata or {}),
         )
         
-        # Update candidate status
+        # Mark this candidate as sent
         await self.conn.execute(
             """
             UPDATE moneymoments.mm_nudge_candidate
@@ -355,30 +355,51 @@ class MoneyMomentsRepository:
             """,
             candidate_id,
         )
-        
+        # Expire other pending candidates for same (user, rule) so we don't deliver duplicates later
+        await self.conn.execute(
+            """
+            UPDATE moneymoments.mm_nudge_candidate
+            SET status = 'expired'
+            WHERE user_id = $1 AND rule_id = $2 AND status = 'pending' AND candidate_id != $3
+            """,
+            user_id,
+            rule_id,
+            candidate_id,
+        )
+
         return delivery_id
 
     async def get_pending_candidates(
         self, user_id: UUID | None = None, limit: int = 100
     ) -> list[dict[str, Any]]:
-        """Get pending nudge candidates ready for delivery."""
+        """Get pending nudge candidates ready for delivery.
+        Returns at most one candidate per (user_id, rule_id) so we don't deliver
+        the same rule multiple times (e.g. from multiple as_of_dates in range).
+        Picks the candidate with the latest as_of_date per rule.
+        """
         query = """
             SELECT c.candidate_id, c.user_id, c.as_of_date, c.rule_id, c.template_code,
                    c.score, c.reason_json, c.created_at,
                    t.title_template, t.body_template, t.cta_text, t.cta_deeplink, t.channel
-            FROM moneymoments.mm_nudge_candidate c
-            JOIN moneymoments.mm_nudge_template_master t ON t.template_code = c.template_code
-            WHERE c.status = 'pending'
+            FROM (
+                SELECT DISTINCT ON (c2.user_id, c2.rule_id)
+                    c2.candidate_id, c2.user_id, c2.as_of_date, c2.rule_id, c2.template_code,
+                    c2.score, c2.reason_json, c2.created_at
+                FROM moneymoments.mm_nudge_candidate c2
+                WHERE c2.status = 'pending'
         """
         params: list[Any] = []
-        
         if user_id:
-            query += " AND c.user_id = $1"
+            query += " AND c2.user_id = $1"
             params.append(user_id)
-        
-        query += " ORDER BY c.created_at ASC LIMIT $" + str(len(params) + 1)
+        query += """
+                ORDER BY c2.user_id, c2.rule_id, c2.as_of_date DESC, c2.created_at ASC
+            ) c
+            JOIN moneymoments.mm_nudge_template_master t ON t.template_code = c.template_code
+            ORDER BY c.created_at ASC
+            LIMIT $""" + str(len(params) + 1)
         params.append(limit)
-        
+
         rows = await self.conn.fetch(query, *params)
         return [dict(row) for row in rows]
 
