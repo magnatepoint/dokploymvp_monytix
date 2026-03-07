@@ -5,14 +5,15 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.monytix.BuildConfig
 import com.example.monytix.data.BackendApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 
 sealed class AppBlockUiState {
     data object Ready : AppBlockUiState()
@@ -55,6 +56,11 @@ class AppBlockViewModel(
             }
             val healthResult = withContext(Dispatchers.IO) { BackendApi.healthCheck() }
             if (healthResult.isFailure) {
+                // In debug, allow showing the app so the new UI (MolyConsole, Future, Assistant) is reachable without a running backend
+                if (BuildConfig.DEBUG) {
+                    _uiState.update { AppBlockUiState.Ready }
+                    return@launch
+                }
                 _uiState.update { AppBlockUiState.ServerDown }
                 return@launch
             }

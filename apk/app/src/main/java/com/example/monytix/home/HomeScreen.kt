@@ -213,7 +213,7 @@ fun HomeScreen(
                     showAssistant = true
                 },
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
+                    .align(Alignment.End)
                     .padding(16.dp),
                 containerColor = AccentPrimary,
                 contentColor = MaterialTheme.colorScheme.onPrimary

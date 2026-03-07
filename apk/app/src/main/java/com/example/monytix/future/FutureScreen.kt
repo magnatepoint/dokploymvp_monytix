@@ -99,15 +99,15 @@ fun FutureScreen(
                     .height(180.dp)
             )
         }
-        if (uiState.riskStripLabel != null) {
+        uiState.riskStripLabel?.let { label ->
             item {
                 RiskStripCard(
-                    label = uiState.riskStripLabel,
+                    label = label,
                     severity = uiState.riskStripSeverity
                 )
             }
         }
-        if (uiState.savingsOpportunity != null) {
+        uiState.savingsOpportunity?.let { savingsText ->
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -115,7 +115,7 @@ fun FutureScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Text(
-                        text = uiState.savingsOpportunity,
+                        text = savingsText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(16.dp)

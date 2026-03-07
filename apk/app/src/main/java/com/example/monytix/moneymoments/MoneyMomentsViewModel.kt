@@ -43,8 +43,6 @@ class MoneyMomentsViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(MoneyMomentsUiState())
     val uiState: StateFlow<MoneyMomentsUiState> = _uiState.asStateFlow()
 
-    private var hasAutoRunPipelineThisSession = false
-
     private suspend fun getAccessToken(): String? =
         FirebaseAuthManager.getIdToken()
 
@@ -57,15 +55,6 @@ class MoneyMomentsViewModel : ViewModel() {
         state.nudgeFromDate ?: defaultNudgeFromDate()
     private fun nudgeRangeTo(state: MoneyMomentsUiState): String =
         state.nudgeToDate ?: defaultNudgeToDate()
-
-    /** Max days for compute/diagnose/evaluate to avoid server timeouts (per-day work). */
-    private fun clampNudgeRangeForHeavyCalls(from: String, to: String, maxDays: Long = 92L): Pair<String, String> {
-        val toDate = LocalDate.parse(to)
-        val fromDate = LocalDate.parse(from)
-        val days = java.time.temporal.ChronoUnit.DAYS.between(fromDate, toDate) + 1
-        return if (days <= maxDays) Pair(from, to)
-        else (toDate.minusDays(maxDays - 1).toString() to to)
-    }
 
     fun setNudgeDateRange(fromDate: String, toDate: String) {
         _uiState.update { it.copy(nudgeFromDate = fromDate, nudgeToDate = toDate) }
@@ -119,60 +108,15 @@ class MoneyMomentsViewModel : ViewModel() {
             val nudgesResult = withContext(Dispatchers.IO) {
                 BackendApi.getNudges(token, limit = 20, fromDate = from, toDate = to)
             }
-            val loadedNudges = nudgesResult.getOrNull()?.nudges ?: emptyList()
             _uiState.update {
                 it.copy(
                     moments = momentsResult.getOrNull()?.moments ?: emptyList(),
-                    nudges = loadedNudges,
+                    nudges = nudgesResult.getOrNull()?.nudges ?: emptyList(),
                     isMomentsLoading = false,
                     isNudgesLoading = false,
                     momentsError = momentsResult.exceptionOrNull()?.message,
                     nudgesError = nudgesResult.exceptionOrNull()?.message
                 )
-            }
-            val (clampedFrom, clampedTo) = clampNudgeRangeForHeavyCalls(from, to)
-            if (loadedNudges.isEmpty()) {
-                val diagnoseResult = withContext(Dispatchers.IO) {
-                    BackendApi.getNudgeDiagnose(token, fromDate = clampedFrom, toDate = clampedTo)
-                }
-                diagnoseResult.getOrNull()?.let { d ->
-                    val hint = when (d.suggestion) {
-                        "no_signal" -> "Run Evaluate & Deliver after adding transactions to get nudges."
-                        "no_rule_matched" -> "No rules matched. Add more transactions or goals, then try Evaluate & Deliver."
-                        "run_evaluate_process" -> "Run Evaluate & Deliver to send pending nudges."
-                        "ok" -> null
-                        else -> "Run Evaluate & Deliver to generate nudges."
-                    }
-                    if (hint != null) {
-                        _uiState.update { state ->
-                            if (state.actionMessage == null) state.copy(actionMessage = hint) else state
-                        }
-                    }
-                }
-                if (!hasAutoRunPipelineThisSession) {
-                    hasAutoRunPipelineThisSession = true
-                    _uiState.update { it.copy(isEvaluating = true, actionError = null, actionMessage = null) }
-                    try {
-                        withContext(Dispatchers.IO) {
-                            BackendApi.computeSignal(token, fromDate = clampedFrom, toDate = clampedTo)
-                        }
-                        withContext(Dispatchers.IO) {
-                            BackendApi.evaluateNudges(token, fromDate = clampedFrom, toDate = clampedTo)
-                        }
-                        _uiState.update { it.copy(isEvaluating = false, isComputing = true) }
-                        withContext(Dispatchers.IO) { BackendApi.processNudges(token, 10) }
-                        _uiState.update { it.copy(isComputing = false) }
-                        loadData()
-                    } catch (e: Exception) {
-                        _uiState.update {
-                            it.copy(
-                                isEvaluating = false,
-                                isComputing = false,
-                                actionError = e.message ?: "Failed to evaluate and deliver nudges"
-                            )
-                        }
-                    }
-                }
             }
         }
     }
@@ -207,95 +151,6 @@ class MoneyMomentsViewModel : ViewModel() {
             habitsCount = habitsCount,
             savedAmount = savedAmount
         )
-    }
-
-    fun evaluateAndDeliverNudges() {
-        viewModelScope.launch {
-            val token = getAccessToken()
-            if (token == null) {
-                _uiState.update {
-                    it.copy(actionError = "Sign in to get personalized nudges.")
-                }
-                return@launch
-            }
-            val from = nudgeRangeFrom(_uiState.value)
-            val to = nudgeRangeTo(_uiState.value)
-            val (clampedFrom, clampedTo) = clampNudgeRangeForHeavyCalls(from, to)
-            _uiState.update {
-                it.copy(isEvaluating = true, actionError = null, actionMessage = null)
-            }
-            try {
-                withContext(Dispatchers.IO) {
-                    BackendApi.computeSignal(token, fromDate = clampedFrom, toDate = clampedTo)
-                }
-                val evalResult = withContext(Dispatchers.IO) {
-                    BackendApi.evaluateNudges(token, fromDate = clampedFrom, toDate = clampedTo)
-                }
-                _uiState.update { it.copy(isEvaluating = false) }
-                _uiState.update { it.copy(isComputing = true) }
-                val processResult = withContext(Dispatchers.IO) {
-                    BackendApi.processNudges(token, 10)
-                }
-                val evalBody = evalResult.getOrNull()
-                val processBody = processResult.getOrNull()
-                val deliveredCount = processBody?.count ?: 0
-                val message = when {
-                    deliveredCount > 0 -> "${deliveredCount} nudges delivered."
-                    evalBody?.status == "no_candidates" -> when (evalBody.reason) {
-                        "no_signal" -> "No activity data yet. Add or connect accounts to get personalized nudges."
-                        "no_rule_matched" -> "No nudges matched your activity this week. Check back later."
-                        else -> "No nudges this time. Try again later."
-                    }
-                    else -> null
-                }
-                _uiState.update {
-                    it.copy(
-                        isComputing = false,
-                        actionMessage = message,
-                        actionError = evalResult.exceptionOrNull()?.message ?: processResult.exceptionOrNull()?.message
-                    )
-                }
-                loadData()
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isEvaluating = false,
-                        isComputing = false,
-                        actionError = e.message ?: "Failed to evaluate and deliver nudges",
-                        actionMessage = null
-                    )
-                }
-            }
-        }
-    }
-
-    fun computeMoments() {
-        viewModelScope.launch {
-            val token = getAccessToken() ?: return@launch
-            _uiState.update { it.copy(isComputing = true, actionError = null) }
-            var successCount = 0
-            val now = java.util.Calendar.getInstance()
-            for (i in 0 until 12) {
-                val cal = java.util.Calendar.getInstance().apply {
-                    set(now.get(java.util.Calendar.YEAR), now.get(java.util.Calendar.MONTH) - i, 1)
-                }
-                val monthStr = "%04d-%02d".format(cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH) + 1)
-                try {
-                    val result = withContext(Dispatchers.IO) {
-                        BackendApi.computeMoments(token, monthStr)
-                    }
-                    if (result.isSuccess) successCount++
-                } catch (_: Exception) {}
-            }
-            _uiState.update { it.copy(isComputing = false) }
-            if (successCount > 0) {
-                loadData()
-            } else {
-                _uiState.update {
-                    it.copy(actionError = "Failed to compute moments. Upload transaction data first.")
-                }
-            }
-        }
     }
 
     fun logNudgeInteraction(deliveryId: String, eventType: String) {

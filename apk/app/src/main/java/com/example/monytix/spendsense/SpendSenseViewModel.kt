@@ -18,6 +18,7 @@ import com.example.monytix.data.TransactionRecordResponse
 import com.example.monytix.budgetpilot.BudgetUpdateCache
 import com.example.monytix.goaltracker.GoalUpdateCache
 import com.example.monytix.data.TransactionUpdateRequest
+import com.example.monytix.data.UploadBatchResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +27,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 
 /** Holds pending file upload - survives activity recreation, triggers recomposition */
@@ -888,6 +891,9 @@ class SpendSenseViewModel : ViewModel() {
                         loadInsights()
                         UploadProcessingState.phase.value = UploadProcessingPhase.Complete
                         UploadProcessingState.errorMessage.value = null
+                        viewModelScope.launch {
+                            runNudgeAndMomentsPipelineAfterUpload(token, batch)
+                        }
                         return
                     }
                     "failed" -> {
@@ -903,6 +909,56 @@ class SpendSenseViewModel : ViewModel() {
         }
         UploadProcessingState.phase.value = UploadProcessingPhase.Failed
         UploadProcessingState.errorMessage.value = "Processing timed out"
+    }
+
+    private suspend fun runNudgeAndMomentsPipelineAfterUpload(token: String, batch: UploadBatchResponse) {
+        val maxDays = 92L
+        val defaultTo = LocalDate.now()
+        val defaultFrom = defaultTo.minusDays(maxDays - 1)
+        val (fromDate, toDate) = when {
+            batch.from_date != null && batch.to_date != null -> {
+                try {
+                    val from = LocalDate.parse(batch.from_date)
+                    val to = LocalDate.parse(batch.to_date)
+                    val days = ChronoUnit.DAYS.between(from, to) + 1
+                    if (days > maxDays) {
+                        to.minusDays(maxDays - 1).toString() to to.toString()
+                    } else {
+                        from.toString() to to.toString()
+                    }
+                } catch (_: Exception) {
+                    defaultFrom.toString() to defaultTo.toString()
+                }
+            }
+            else -> defaultFrom.toString() to defaultTo.toString()
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                BackendApi.computeSignal(token, fromDate = fromDate, toDate = toDate)
+            }
+            withContext(Dispatchers.IO) {
+                BackendApi.evaluateNudges(token, fromDate = fromDate, toDate = toDate)
+            }
+            withContext(Dispatchers.IO) {
+                BackendApi.processNudges(token, 10)
+            }
+            val from = LocalDate.parse(fromDate)
+            val to = LocalDate.parse(toDate)
+            var month = YearMonth.from(from)
+            val endMonth = YearMonth.from(to)
+            while (!month.isAfter(endMonth)) {
+                try {
+                    withContext(Dispatchers.IO) {
+                        BackendApi.computeMoments(token, month.toString())
+                    }
+                } catch (e: Exception) {
+                    Log.w("MonytixUpload", "computeMoments ${month} failed: ${e.message}")
+                }
+                month = month.plusMonths(1)
+            }
+        } catch (e: Exception) {
+            Log.e("MonytixUpload", "Nudge/moments pipeline after upload failed", e)
+        }
     }
 
     /** Call when dialog is dismissed after success; resets phase to Idle so next upload is clean. */

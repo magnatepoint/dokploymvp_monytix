@@ -31,6 +31,8 @@ class UploadBatch(BaseModel):
     status: str
     created_at: datetime
     error_message: str | None = None  # From error_json when status=failed
+    from_date: date | None = None  # Min txn_date in batch (for nudge/moments pipeline)
+    to_date: date | None = None  # Max txn_date in batch
 
 
 class TransactionRecord(BaseModel):

@@ -461,26 +461,11 @@ private fun NudgesTab(viewModel: MoneyMomentsViewModel) {
                     Text("🔔", style = MaterialTheme.typography.displayMedium)
                     Text("No Nudges Yet", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                     Text(
-                        "Nudges are personalized recommendations. Evaluate and deliver nudges to get started.",
+                        "Nudges are personalized recommendations. Upload transactions in SpendSense and they will be generated automatically. Select a date range above to view.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
-                    uiState.actionMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall) }
                     uiState.actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                    Button(
-                        onClick = {
-                            AnalyticsHelper.logEvent("evaluate_nudges")
-                            viewModel.evaluateAndDeliverNudges()
-                        },
-                        enabled = !uiState.isEvaluating && !uiState.isComputing,
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-                    ) {
-                        if (uiState.isEvaluating || uiState.isComputing) {
-                            MonytixSpinner(size = 20.dp, stroke = 2.dp)
-                            Spacer(Modifier.padding(4.dp))
-                        }
-                        Text(if (uiState.isEvaluating || uiState.isComputing) "Processing..." else "Evaluate & Deliver Nudges")
-                    }
                 }
             }
         } else {
@@ -597,26 +582,11 @@ private fun HabitsTab(viewModel: MoneyMomentsViewModel) {
             Spacer(Modifier.height(16.dp))
             Text("No Habits Tracked Yet", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(
-                "Habits are derived from spending moments. Compute moments to start tracking.",
+                "Habits are derived from spending moments. Upload transactions in SpendSense and habits will be generated automatically. Select a date range to view.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             )
             uiState.actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    AnalyticsHelper.logEvent("compute_moments")
-                    viewModel.computeMoments()
-                },
-                enabled = !uiState.isComputing,
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-            ) {
-                if (uiState.isComputing) {
-                    MonytixSpinner(size = 20.dp, stroke = 2.dp)
-                    Spacer(Modifier.padding(4.dp))
-                }
-                Text(if (uiState.isComputing) "Computing..." else "Compute Moments for Past 12 Months")
-            }
         }
         return
     }

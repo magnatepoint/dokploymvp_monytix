@@ -717,6 +717,17 @@ class SpendSenseService:
         row = await self._pool.fetchrow(query, batch_id, user_id)
         if not row:
             return None
+        # Date range of transactions in this batch (for nudge/moments pipeline)
+        date_row = await self._pool.fetchrow(
+            """
+            SELECT MIN(txn_date)::date AS from_date, MAX(txn_date)::date AS to_date
+            FROM spendsense.txn_fact
+            WHERE upload_id = $1
+            """,
+            batch_id,
+        )
+        from_date = date_row["from_date"] if date_row and date_row["from_date"] else None
+        to_date = date_row["to_date"] if date_row and date_row["to_date"] else None
         return UploadBatch(
             upload_id=str(row["upload_id"]),
             user_id=str(row["user_id"]),
@@ -724,6 +735,8 @@ class SpendSenseService:
             status=str(row["status"]),
             created_at=row["received_at"],
             error_message=row["error_message"],
+            from_date=from_date,
+            to_date=to_date,
         )
 
     def _build_transaction_where(

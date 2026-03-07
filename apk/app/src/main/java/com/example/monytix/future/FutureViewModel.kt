@@ -50,36 +50,31 @@ class FutureViewModel : ViewModel() {
                 loadMockData()
                 return@launch
             }
-            when (val result = BackendApi.getForecast(token)) {
-                is kotlin.Result.Success -> {
-                    val r = result.value
-                    val points = r.projection_points.mapNotNull { list ->
-                        if (list.size >= 2) Pair(list[0].toFloat(), list[1].toFloat()) else null
-                    }
-                    _uiState.update {
-                        it.copy(
-                            confidenceLabel = r.confidence_label.ifEmpty { "Based on this month's cash flow" },
-                            projectionPoints = points,
-                            riskStripLabel = r.risk_strip_label,
-                            riskStripSeverity = r.risk_strip_severity ?: "neutral",
-                            savingsOpportunity = r.savings_opportunity,
-                            recommendations = r.recommendations.mapIndexed { i, rec ->
-                                FutureRecommendation(
-                                    id = i.toString(),
-                                    title = rec.title,
-                                    body = rec.body,
-                                    ctaLabel = null
-                                )
-                            },
-                            hasData = points.isNotEmpty(),
-                            isLoading = false
-                        )
-                    }
+            val result = BackendApi.getForecast(token)
+            result.getOrNull()?.let { r ->
+                val points = r.projection_points.mapNotNull { list ->
+                    if (list.size >= 2) Pair(list[0].toFloat(), list[1].toFloat()) else null
                 }
-                is kotlin.Result.Failure -> {
-                    loadMockData()
+                _uiState.update {
+                    it.copy(
+                        confidenceLabel = r.confidence_label.ifEmpty { "Based on this month's cash flow" },
+                        projectionPoints = points,
+                        riskStripLabel = r.risk_strip_label,
+                        riskStripSeverity = r.risk_strip_severity,
+                        savingsOpportunity = r.savings_opportunity,
+                        recommendations = r.recommendations.mapIndexed { i, rec ->
+                            FutureRecommendation(
+                                id = i.toString(),
+                                title = rec.title,
+                                body = rec.body,
+                                ctaLabel = null
+                            )
+                        },
+                        hasData = points.isNotEmpty(),
+                        isLoading = false
+                    )
                 }
-            }
+            } ?: run { loadMockData() }
         }
     }
 

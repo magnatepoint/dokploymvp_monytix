@@ -875,7 +875,9 @@ data class UploadBatchResponse(
     val source_type: String,
     val status: String,
     val created_at: String,
-    val error_message: String? = null
+    val error_message: String? = null,
+    val from_date: String? = null,
+    val to_date: String? = null
 )
 
 @kotlinx.serialization.Serializable

@@ -5,6 +5,7 @@
 //  Financial Future (forecast) screen. Premium redesign killer screen.
 //
 
+import Combine
 import SwiftUI
 
 struct FutureView: View {

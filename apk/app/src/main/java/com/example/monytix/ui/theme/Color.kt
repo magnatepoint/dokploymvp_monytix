@@ -19,4 +19,5 @@ val CyanGlow = Color(0x3300D4FF) // 20% opacity glow
 // States
 val BorderSubtle = Color(0xFF23304A)
 val Success = Color(0xFF2ED573)
+val SuccessGreen = Success
 val ErrorRed = Color(0xFFFF4D4F)

@@ -17,6 +17,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -56,7 +57,7 @@ private fun mockAnswerFor(prompt: String): String = when {
     else -> "Your finances look on track. Use the Future tab for projections and Goals for targets. If you have a specific question, try one of the prompts above."
 }
 
-@androidx.compose.material3.ExperimentalMaterial3Api::class
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssistantSheet(
     onDismiss: () -> Unit,
@@ -75,132 +76,156 @@ fun AssistantSheet(
         containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = null
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Ask MONYTIX",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+        AssistantSheetContent(
+            query = query,
+            onQueryChange = { query = it },
+            answer = answer,
+            isLoading = isLoading,
+            onDismiss = onDismiss,
+            onChipClick = { chip ->
+                if (isLoading) return@AssistantSheetContent
+                answer = null
+                isLoading = true
+                scope.launch {
+                    val token = FirebaseAuthManager.getIdToken()
+                    if (token != null) {
+                        val result = BackendApi.postAssistantAsk(token, chip)
+                        answer = result.getOrNull()?.answer ?: mockAnswerFor(chip)
+                    } else {
+                        answer = mockAnswerFor(chip)
+                    }
+                    isLoading = false
                 }
             }
-            Spacer(Modifier.height(8.dp))
+        )
+    }
+}
+
+@Composable
+private fun AssistantSheetContent(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    answer: String?,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onChipClick: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 24.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = "Quick prompts or type your question.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = "Ask MONYTIX",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(Modifier.height(12.dp))
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Quick prompts or type your question.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Ask anything...") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = AccentPrimary,
+                    cursorColor = AccentPrimary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface
+                ),
+                singleLine = true
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Suggestions",
+            style = MaterialTheme.typography.labelMedium,
+            color = AccentPrimary
+        )
+        Spacer(Modifier.height(8.dp))
+        PromptChipsGrid(onChipClick = onChipClick)
+        if (isLoading) {
+            Spacer(Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Ask anything...") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentPrimary,
-                        cursorColor = AccentPrimary,
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    singleLine = true
+                CircularProgressIndicator(modifier = Modifier.height(24.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Asking MONYTIX…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+        if (answer != null) {
             Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
             Text(
-                text = "Suggestions",
-                style = MaterialTheme.typography.labelMedium,
+                text = "MONYTIX",
+                style = MaterialTheme.typography.labelSmall,
                 color = AccentPrimary
             )
-            Spacer(Modifier.height(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                PROMPT_CHIPS.chunked(2).forEach { rowChips ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowChips.forEach { chip ->
-                            Text(
-                                text = chip,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        if (isLoading) return@clickable
-                                        answer = null
-                                        isLoading = true
-                                        scope.launch {
-                                            val token = FirebaseAuthManager.getIdToken()
-                                            if (token != null) {
-                                                val result = BackendApi.postAssistantAsk(token, chip)
-                                                answer = result.getOrNull()?.answer ?: mockAnswerFor(chip)
-                                            } else {
-                                                answer = mockAnswerFor(chip)
-                                            }
-                                            isLoading = false
-                                        }
-                                    }
-                                    .background(
-                                        AccentPrimary.copy(alpha = 0.12f),
-                                        RoundedCornerShape(12.dp)
-                                    )
-                                    .padding(12.dp)
-                            )
-                            if (rowChips.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-            if (isLoading) {
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.height(24.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = answer ?: "",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            )
+        }
+    }
+}
+
+@Composable
+private fun PromptChipsGrid(onChipClick: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (rowChips in PROMPT_CHIPS.chunked(2)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                for (chip in rowChips) {
                     Text(
-                        text = "Asking MONYTIX…",
+                        text = chip,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onChipClick(chip) }
+                            .background(
+                                AccentPrimary.copy(alpha = 0.12f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(12.dp)
                     )
                 }
-            }
-            if (answer != null) {
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "MONYTIX",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AccentPrimary
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = answer ?: "",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                )
+                if (rowChips.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }

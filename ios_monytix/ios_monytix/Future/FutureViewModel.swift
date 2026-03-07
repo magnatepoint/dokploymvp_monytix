@@ -5,6 +5,7 @@
 //  Financial Future (forecast) screen. Loads from GET /v1/forecast; falls back to mock on failure.
 //
 
+import Combine
 import Foundation
 import SwiftUI
 
