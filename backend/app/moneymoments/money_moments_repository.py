@@ -1,8 +1,9 @@
 """MoneyMoments repository for database operations."""
 
+import json
+from datetime import date
 from typing import Any
 from uuid import UUID
-from datetime import date
 
 import asyncpg
 
@@ -297,7 +298,7 @@ class MoneyMomentsRepository:
                 candidate["rule_id"],
                 candidate["template_code"],
                 candidate["score"],
-                candidate["reason_json"],
+                json.dumps(candidate.get("reason_json") or {}),
             )
             if candidate_id:
                 candidate_ids.append(candidate_id)

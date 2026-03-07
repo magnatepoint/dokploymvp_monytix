@@ -29,7 +29,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,7 +63,7 @@ import com.example.monytix.ui.MonytixSpinner
 import com.example.monytix.ui.theme.AccentPrimary
 import com.example.monytix.ui.theme.GlassCard
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MoneyMomentsScreen(
     viewModel: MoneyMomentsViewModel = viewModel(),
@@ -178,6 +181,219 @@ private fun TabBar(selectedTab: MmTab, onTabSelected: (MmTab) -> Unit) {
     }
 }
 
+private enum class NudgeRangePreset(val label: String, val fromDaysAgo: Long, val toDaysAgo: Long) {
+    TODAY("Today", 0, 0),
+    LAST_7("Last 7 days", 6, 0),
+    LAST_30("Last 30 days", 29, 0)
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun NudgeDateRangeSelector(
+    fromDate: String?,
+    toDate: String?,
+    onRangeSelected: (from: String, to: String) -> Unit
+) {
+    val today = java.time.LocalDate.now()
+    val selectedPreset = when {
+        fromDate == null || toDate == null -> null
+        else -> try {
+            val from = java.time.LocalDate.parse(fromDate)
+            val to = java.time.LocalDate.parse(toDate)
+            when {
+                from == today && to == today -> NudgeRangePreset.TODAY
+                from == today.minusDays(6) && to == today -> NudgeRangePreset.LAST_7
+                from == today.minusDays(29) && to == today -> NudgeRangePreset.LAST_30
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+    var showCustomDialog by remember { mutableStateOf(false) }
+    var tempFrom by remember { mutableStateOf<java.time.LocalDate>(today.minusDays(6)) }
+    var tempTo by remember { mutableStateOf<java.time.LocalDate>(today) }
+    var showPickerFor by remember { mutableStateOf<String?>(null) }
+    val zoneId = java.time.ZoneId.systemDefault()
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            NudgeRangePreset.entries.forEach { preset ->
+                val from = today.minusDays(preset.fromDaysAgo).toString()
+                val to = today.minusDays(preset.toDaysAgo).toString()
+                FilterChip(
+                    selected = selectedPreset == preset,
+                    onClick = { onRangeSelected(from, to) },
+                    label = { Text(preset.label) }
+                )
+            }
+            FilterChip(
+                selected = selectedPreset == null && fromDate != null && toDate != null,
+                onClick = {
+                    fromDate?.let { tempFrom = java.time.LocalDate.parse(it) }
+                    toDate?.let { tempTo = java.time.LocalDate.parse(it) }
+                    if (fromDate == null) tempFrom = today.minusDays(6)
+                    if (toDate == null) tempTo = today
+                    showCustomDialog = true
+                },
+                label = { Text("Custom") }
+            )
+        }
+        if (fromDate != null && toDate != null) {
+            Text(
+                text = "Showing: ${formatDateRange(fromDate, toDate)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+        }
+    }
+
+    if (showCustomDialog) {
+        CustomDateRangeDialog(
+            from = tempFrom,
+            to = tempTo,
+            onDismiss = { showCustomDialog = false },
+            onApply = {
+                if (!tempTo.isBefore(tempFrom)) {
+                    onRangeSelected(tempFrom.toString(), tempTo.toString())
+                    showCustomDialog = false
+                }
+            },
+            onOpenFromPicker = { showPickerFor = "from" },
+            onOpenToPicker = { showPickerFor = "to" }
+        )
+    }
+
+    if (showPickerFor == "from") {
+        val fromMillis = tempFrom.atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = fromMillis,
+            yearRange = IntRange(today.year - 2, today.year + 1)
+        )
+        DatePickerDialog(
+            onDismissRequest = { showPickerFor = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        state.selectedDateMillis?.let { millis ->
+                            tempFrom = java.time.Instant.ofEpochMilli(millis).atZone(zoneId).toLocalDate()
+                            showPickerFor = null
+                        }
+                    }
+                ) {
+                    Text("OK", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        ) {
+            DatePicker(state = state)
+        }
+    }
+    if (showPickerFor == "to") {
+        val toMillis = tempTo.atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = toMillis,
+            yearRange = IntRange(today.year - 2, today.year + 1)
+        )
+        DatePickerDialog(
+            onDismissRequest = { showPickerFor = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        state.selectedDateMillis?.let { millis ->
+                            tempTo = java.time.Instant.ofEpochMilli(millis).atZone(zoneId).toLocalDate()
+                            showPickerFor = null
+                        }
+                    }
+                ) {
+                    Text("OK", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        ) {
+            DatePicker(state = state)
+        }
+    }
+}
+
+@Composable
+private fun CustomDateRangeDialog(
+    from: java.time.LocalDate,
+    to: java.time.LocalDate,
+    onDismiss: () -> Unit,
+    onApply: () -> Unit,
+    onOpenFromPicker: () -> Unit,
+    onOpenToPicker: () -> Unit
+) {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", java.util.Locale.US)
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Text(
+                    "Custom date range",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("From", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        Text(from.format(formatter), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    TextButton(onClick = onOpenFromPicker) { Text("Select") }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("To", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        Text(to.format(formatter), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    TextButton(onClick = onOpenToPicker) { Text("Select") }
+                }
+                val toBeforeFrom = to.isBefore(from)
+                if (toBeforeFrom) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "To date must be on or after from date.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Button(
+                        onClick = onApply,
+                        enabled = !toBeforeFrom,
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                    ) {
+                        Text("Apply")
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun NudgesTab(viewModel: MoneyMomentsViewModel) {
     val uiState by viewModel.uiState.collectAsState()
@@ -224,6 +440,16 @@ private fun NudgesTab(viewModel: MoneyMomentsViewModel) {
         }
         item {
             Text("Active Nudges", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        }
+        item {
+            NudgeDateRangeSelector(
+                fromDate = uiState.nudgeFromDate,
+                toDate = uiState.nudgeToDate,
+                onRangeSelected = { from, to ->
+                    viewModel.setNudgeDateRange(from, to)
+                    viewModel.loadData()
+                }
+            )
         }
         if (uiState.nudges.isEmpty()) {
             item {
@@ -699,6 +925,17 @@ private fun formatCurrency(amount: Double): String {
     val abs = kotlin.math.abs(amount)
     val formatted = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(abs.toLong())
     return if (amount < 0) "-₹$formatted" else "₹$formatted"
+}
+
+private fun formatDateRange(from: String, to: String): String {
+    return try {
+        val fromDate = java.time.LocalDate.parse(from)
+        val toDate = java.time.LocalDate.parse(to)
+        val formatter = java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.US)
+        "${fromDate.format(formatter)} – ${toDate.format(formatter)}, ${fromDate.year}"
+    } catch (_: Exception) {
+        "$from – $to"
+    }
 }
 
 // Habit Card 2.0: diagnostic display model (client-side from MoneyMoment)
