@@ -1917,6 +1917,8 @@ private fun UploadStatementDialog(
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                         }
+                        Spacer(Modifier.height(16.dp))
+                        com.example.monytix.ui.TrustBannerUpload(modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(12.dp))
                         uiState.error?.let { err ->
                             Card(

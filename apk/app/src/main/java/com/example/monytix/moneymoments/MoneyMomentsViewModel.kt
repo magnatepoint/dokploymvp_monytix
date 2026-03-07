@@ -24,7 +24,8 @@ data class MoneyMomentsUiState(
     val nudgesError: String? = null,
     val isEvaluating: Boolean = false,
     val isComputing: Boolean = false,
-    val actionError: String? = null
+    val actionError: String? = null,
+    val actionMessage: String? = null
 )
 
 data class ProgressMetrics(
@@ -38,6 +39,8 @@ class MoneyMomentsViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(MoneyMomentsUiState())
     val uiState: StateFlow<MoneyMomentsUiState> = _uiState.asStateFlow()
+
+    private var hasAutoRunPipelineThisSession = false
 
     private suspend fun getAccessToken(): String? =
         FirebaseAuthManager.getIdToken()
@@ -59,7 +62,17 @@ class MoneyMomentsViewModel : ViewModel() {
 
     fun loadData() {
         viewModelScope.launch {
-            val token = getAccessToken() ?: return@launch
+            val token = getAccessToken()
+            if (token == null) {
+                _uiState.update {
+                    it.copy(
+                        isMomentsLoading = false,
+                        isNudgesLoading = false,
+                        actionError = "Sign in to get personalized nudges and moments."
+                    )
+                }
+                return@launch
+            }
             _uiState.update {
                 it.copy(
                     isMomentsLoading = true,
@@ -74,15 +87,55 @@ class MoneyMomentsViewModel : ViewModel() {
             val nudgesResult = withContext(Dispatchers.IO) {
                 BackendApi.getNudges(token, limit = 20)
             }
+            val loadedNudges = nudgesResult.getOrNull()?.nudges ?: emptyList()
             _uiState.update {
                 it.copy(
                     moments = momentsResult.getOrNull()?.moments ?: emptyList(),
-                    nudges = nudgesResult.getOrNull()?.nudges ?: emptyList(),
+                    nudges = loadedNudges,
                     isMomentsLoading = false,
                     isNudgesLoading = false,
                     momentsError = momentsResult.exceptionOrNull()?.message,
                     nudgesError = nudgesResult.exceptionOrNull()?.message
                 )
+            }
+            if (loadedNudges.isEmpty()) {
+                val diagnoseResult = withContext(Dispatchers.IO) {
+                    BackendApi.getNudgeDiagnose(token)
+                }
+                diagnoseResult.getOrNull()?.let { d ->
+                    val hint = when (d.suggestion) {
+                        "no_signal" -> "Run Evaluate & Deliver after adding transactions to get nudges."
+                        "no_rule_matched" -> "No rules matched. Add more transactions or goals, then try Evaluate & Deliver."
+                        "run_evaluate_process" -> "Run Evaluate & Deliver to send pending nudges."
+                        "ok" -> null
+                        else -> "Run Evaluate & Deliver to generate nudges."
+                    }
+                    if (hint != null) {
+                        _uiState.update { state ->
+                            if (state.actionMessage == null) state.copy(actionMessage = hint) else state
+                        }
+                    }
+                }
+                if (!hasAutoRunPipelineThisSession) {
+                    hasAutoRunPipelineThisSession = true
+                    _uiState.update { it.copy(isEvaluating = true, actionError = null, actionMessage = null) }
+                    try {
+                        withContext(Dispatchers.IO) { BackendApi.computeSignal(token, null) }
+                        withContext(Dispatchers.IO) { BackendApi.evaluateNudges(token, null) }
+                        _uiState.update { it.copy(isEvaluating = false, isComputing = true) }
+                        withContext(Dispatchers.IO) { BackendApi.processNudges(token, 10) }
+                        _uiState.update { it.copy(isComputing = false) }
+                        loadData()
+                    } catch (e: Exception) {
+                        _uiState.update {
+                            it.copy(
+                                isEvaluating = false,
+                                isComputing = false,
+                                actionError = e.message ?: "Failed to evaluate and deliver nudges"
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -121,21 +174,46 @@ class MoneyMomentsViewModel : ViewModel() {
 
     fun evaluateAndDeliverNudges() {
         viewModelScope.launch {
-            val token = getAccessToken() ?: return@launch
+            val token = getAccessToken()
+            if (token == null) {
+                _uiState.update {
+                    it.copy(actionError = "Sign in to get personalized nudges.")
+                }
+                return@launch
+            }
             _uiState.update {
-                it.copy(isEvaluating = true, actionError = null)
+                it.copy(isEvaluating = true, actionError = null, actionMessage = null)
             }
             try {
                 withContext(Dispatchers.IO) {
                     BackendApi.computeSignal(token, null)
                 }
-                withContext(Dispatchers.IO) {
+                val evalResult = withContext(Dispatchers.IO) {
                     BackendApi.evaluateNudges(token, null)
                 }
                 _uiState.update { it.copy(isEvaluating = false) }
                 _uiState.update { it.copy(isComputing = true) }
-                withContext(Dispatchers.IO) {
+                val processResult = withContext(Dispatchers.IO) {
                     BackendApi.processNudges(token, 10)
+                }
+                val evalBody = evalResult.getOrNull()
+                val processBody = processResult.getOrNull()
+                val deliveredCount = processBody?.count ?: 0
+                val message = when {
+                    deliveredCount > 0 -> "${deliveredCount} nudges delivered."
+                    evalBody?.status == "no_candidates" -> when (evalBody.reason) {
+                        "no_signal" -> "No activity data yet. Add or connect accounts to get personalized nudges."
+                        "no_rule_matched" -> "No nudges matched your activity this week. Check back later."
+                        else -> "No nudges this time. Try again later."
+                    }
+                    else -> null
+                }
+                _uiState.update {
+                    it.copy(
+                        isComputing = false,
+                        actionMessage = message,
+                        actionError = evalResult.exceptionOrNull()?.message ?: processResult.exceptionOrNull()?.message
+                    )
                 }
                 loadData()
             } catch (e: Exception) {
@@ -143,11 +221,11 @@ class MoneyMomentsViewModel : ViewModel() {
                     it.copy(
                         isEvaluating = false,
                         isComputing = false,
-                        actionError = e.message ?: "Failed to evaluate and deliver nudges"
+                        actionError = e.message ?: "Failed to evaluate and deliver nudges",
+                        actionMessage = null
                     )
                 }
             }
-            _uiState.update { it.copy(isComputing = false) }
         }
     }
 
@@ -191,5 +269,9 @@ class MoneyMomentsViewModel : ViewModel() {
 
     fun clearActionError() {
         _uiState.update { it.copy(actionError = null) }
+    }
+
+    fun clearActionMessage() {
+        _uiState.update { it.copy(actionMessage = null) }
     }
 }

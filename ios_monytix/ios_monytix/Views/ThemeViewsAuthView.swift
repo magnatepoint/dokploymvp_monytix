@@ -53,6 +53,10 @@ struct AuthView: View {
                     signInWithAppleButton
                         .enter(delay: 0.4)
                     
+                    // Sign In with Google
+                    signInWithGoogleButton
+                        .enter(delay: 0.42)
+                    
                     // OR Divider
                     orDivider
                         .enter(delay: 0.45)
@@ -133,7 +137,7 @@ struct AuthView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(
-                        isSignIn ? MonytixTheme.gradientPrimary : Color.clear
+                        isSignIn ? AnyShapeStyle(MonytixTheme.gradientPrimary) : AnyShapeStyle(Color.clear)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }
@@ -152,7 +156,7 @@ struct AuthView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(
-                        !isSignIn ? MonytixTheme.gradientPrimary : Color.clear
+                        !isSignIn ? AnyShapeStyle(MonytixTheme.gradientPrimary) : AnyShapeStyle(Color.clear)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }
@@ -223,7 +227,6 @@ struct AuthView: View {
                     Spacer()
                     Button {
                         // Handle forgot password
-                        print("Forgot password tapped")
                     } label: {
                         Text("Forgot Password?")
                             .font(.system(size: 13, weight: .medium))
@@ -247,12 +250,42 @@ struct AuthView: View {
             }
         )
         .signInWithAppleButtonStyle(.white)
+        .frame(maxWidth: 375)
         .frame(height: 56)
         .clipShape(RoundedRectangle(cornerRadius: MonytixShape.buttonRadius))
         .overlay(
             RoundedRectangle(cornerRadius: MonytixShape.buttonRadius)
                 .stroke(MonytixTheme.stroke.opacity(0.6), lineWidth: 1)
         )
+    }
+    
+    // MARK: - Sign In with Google Button
+    
+    private var signInWithGoogleButton: some View {
+        Button {
+            Task {
+                await AuthManager.shared.signInWithGoogle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "g.circle.fill")
+                    .font(.system(size: 20))
+                Text("Sign in with Google")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .foregroundStyle(MonytixTheme.text1)
+            .background(MonytixTheme.surface2)
+            .clipShape(RoundedRectangle(cornerRadius: MonytixShape.buttonRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: MonytixShape.buttonRadius)
+                    .stroke(MonytixTheme.stroke.opacity(0.6), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(AuthManager.shared.isLoading)
+        .hapticFeedback()
     }
     
     // MARK: - OR Divider
@@ -363,42 +396,21 @@ struct AuthView: View {
             }
         }
         
-        // Simulate API call
+        // Theme preview: no real API call; use AuthScreen for real sign-in.
         isLoading = true
         HapticManager.medium()
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            isLoading = false
-            HapticManager.success()
-            // Navigate to main app
-            print("Auth successful! Email: \(email)")
-        }
+        isLoading = false
+        HapticManager.success()
     }
     
     private func handleSignInWithAppleCompletion(_ result: Result<ASAuthorization, Error>) {
         switch result {
         case .success(let authorization):
-            if let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential {
-                let userID = appleIDCredential.user
-                let email = appleIDCredential.email
-                let fullName = appleIDCredential.fullName
-                
-                // Handle successful Sign in with Apple
+            if let _ = authorization.credential as? ASAuthorizationAppleIDCredential {
                 isLoading = true
                 HapticManager.medium()
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    isLoading = false
-                    HapticManager.success()
-                    print("Sign in with Apple successful!")
-                    print("User ID: \(userID)")
-                    if let email = email {
-                        print("Email: \(email)")
-                    }
-                    if let fullName = fullName {
-                        print("Name: \(fullName.givenName ?? "") \(fullName.familyName ?? "")")
-                    }
-                }
+                isLoading = false
+                HapticManager.success()
             }
             
         case .failure(let error):

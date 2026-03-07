@@ -222,24 +222,45 @@
     <string name="server_down_retry">Retry</string>
     <string name="server_down_continue">Continue anyway</string>
 
-    <!-- Empty states -->
+    <!-- Empty states (premium fintech copy) -->
     <string name="empty_no_transactions_title">No transactions yet</string>
-    <string name="empty_no_transactions_hint">Upload a bank statement or add transactions manually to get started.</string>
-    <string name="empty_no_transactions_action">Add transaction</string>
+    <string name="empty_no_transactions_hint">Upload a statement or add a transaction to get started.</string>
+    <string name="empty_no_transactions_action">Upload statement</string>
+
+    <string name="empty_command_center_title">Your command center is ready</string>
+    <string name="empty_command_center_hint">Connect an account or upload a statement to see your financial picture.</string>
+    <string name="empty_command_center_action">Upload statement</string>
+    <string name="empty_command_center_secondary">Add transaction</string>
+
+    <string name="empty_no_forecast_title">Your financial future</string>
+    <string name="empty_no_forecast_hint">We need a bit more history to project cash flow.</string>
+    <string name="empty_no_forecast_action">Upload statement</string>
+
+    <string name="empty_no_recommendations_title">You\'re on track</string>
+    <string name="empty_no_recommendations_hint">When we have a recommendation, it\'ll show here.</string>
+    <string name="empty_no_recommendations_action">See forecast</string>
     <string name="load_more_with_count">Load more (%d left)</string>
 
-    <string name="empty_no_bank_title">No bank linked</string>
-    <string name="empty_no_bank_hint">Link your bank or upload a statement to see your finances in one place.</string>
-    <string name="empty_no_bank_action">Link bank</string>
-    <string name="empty_no_bank_manual">Upload statement</string>
+    <string name="empty_no_bank_title">Your command center is ready</string>
+    <string name="empty_no_bank_hint">Connect an account or upload a statement to see your financial picture.</string>
+    <string name="empty_no_bank_action">Upload statement</string>
+    <string name="empty_no_bank_manual">Add transaction</string>
 
-    <string name="empty_no_goals_title">No goals created</string>
-    <string name="empty_no_goals_hint">Set savings goals to track your progress and stay motivated.</string>
-    <string name="empty_no_goals_action">Create goal</string>
+    <string name="empty_no_goals_title">Turn intentions into goals</string>
+    <string name="empty_no_goals_hint">Set a target and we\'ll track progress and suggest a plan.</string>
+    <string name="empty_no_goals_action">Add goal</string>
 
-    <string name="empty_no_insights_title">No insights available</string>
-    <string name="empty_no_insights_hint">Add your financial data to get AI-powered insights and forecasts.</string>
-    <string name="empty_no_insights_action">Add data</string>
+    <string name="empty_no_insights_title">Insights will appear here</string>
+    <string name="empty_no_insights_hint">As you add data, we\'ll surface spending patterns and opportunities.</string>
+    <string name="empty_no_insights_action">Go to Spend</string>
+
+    <!-- Trust &amp; security UX -->
+    <string name="trust_encryption_title">Your data is encrypted</string>
+    <string name="trust_encryption_body">Encrypted in transit and at rest. We never store your bank password.</string>
+    <string name="trust_upload_title">Secure upload</string>
+    <string name="trust_upload_body">Files are encrypted and processed securely. We don\'t share your data.</string>
+    <string name="trust_read_only_title">Read-only analysis</string>
+    <string name="trust_read_only_body">We can\'t move money or change your account. Analysis only.</string>
 
     <!-- Profile / Founder extras -->
     <string name="profile_title">Profile</string>

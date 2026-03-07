@@ -1,0 +1,320 @@
+<resources>
+    <string name="app_name">Monytix</string>
+    <!-- Web client ID for Google Sign-In (Credential Manager). From Firebase Console → Project Settings → OAuth. -->
+    <string name="default_web_client_id">636445644991-lcaa6756741obtmko4onbg9gidfb93re.apps.googleusercontent.com</string>
+
+    <!-- Splash -->
+    <string name="splash_tagline">Your money, one place</string>
+    <string name="splash_securing">SECURING CONNECTION...</string>
+    <string name="splash_monytix">MONYTIX</string>
+    <string name="splash_ai_intelligence">AI INTELLIGENCE</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_slide1_title">Smart Wealth for Bharat</string>
+    <string name="onboarding_slide1_subtitle">AI-powered financial planning built specifically for the Indian market.</string>
+    <string name="onboarding_slide2_title">AI-powered insights &amp; future predictions</string>
+    <string name="onboarding_slide3_title">Bank-grade Encryption &amp; Privacy-first design</string>
+    <string name="onboarding_slide3_body">Your financial data is protected by the same security standards used by world-leading banks.</string>
+    <string name="onboarding_continue_mobile">Continue with Mobile</string>
+    <string name="onboarding_existing_user">Existing user? Login</string>
+    <string name="onboarding_get_started">GET STARTED</string>
+    <string name="onboarding_login">Login</string>
+    <string name="onboarding_encrypted">ENCRYPTED</string>
+
+    <!-- Permission explainer -->
+    <string name="permission_notifications_title">Notifications</string>
+    <string name="permission_notifications_desc">We need notifications to remind you about goals and spending alerts. We never spam.</string>
+    <string name="permission_security_experience">Security &amp; Experience</string>
+    <string name="permission_subtitle">To provide AI-powered insights and secure your account, Monytix needs the following permissions.</string>
+    <string name="permission_transaction_title">Transaction Tracking</string>
+    <string name="permission_transaction_desc">Monytix AI reads transaction SMS to automatically categorize your spending and update your budget in real-time.</string>
+    <string name="permission_split_title">Split Bills</string>
+    <string name="permission_split_desc">Easily find friends to split dinners or shared expenses without typing phone numbers manually.</string>
+    <string name="permission_enhanced_title">Enhanced Security</string>
+    <string name="permission_enhanced_desc">We use your location to prevent fraudulent transactions and secure your account.</string>
+    <string name="permission_allow">Allow Permissions</string>
+    <string name="permission_later">I\'ll do this later</string>
+
+    <!-- Update required -->
+    <string name="update_required_title">Time for an Upgrade</string>
+    <string name="update_required_desc">We\'ve introduced some powerful new AI features to help you manage your finances even better. Update now to continue using Monytix safely and efficiently.</string>
+    <string name="update_now">Update Now</string>
+    <string name="not_now">Not Now</string>
+
+    <!-- Exit confirmation -->
+    <string name="exit_confirm_title">Exit Monytix?</string>
+    <string name="exit_confirm_exit">Exit</string>
+    <string name="exit_confirm_cancel">Cancel</string>
+
+    <!-- Auth / Login -->
+    <string name="auth_welcome_to">Welcome to</string>
+    <string name="auth_login">Login</string>
+    <string name="auth_tagline">AI-Powered Financial Intelligence</string>
+    <string name="auth_security_cue">Bank-grade encryption</string>
+    <string name="auth_access_intelligence">Access Your Intelligence</string>
+    <string name="auth_sign_in">Sign In</string>
+    <string name="auth_sign_up">Sign Up</string>
+    <string name="auth_new_to_monytix">New to Monytix? Create your account</string>
+    <string name="auth_already_have_account">Already have an account? Sign in</string>
+    <string name="auth_phone_otp">Phone + OTP</string>
+    <string name="auth_google">Continue with Google</string>
+    <string name="auth_apple">Continue with Apple</string>
+    <string name="auth_email_password">Email + Password</string>
+    <string name="auth_phone_hint">+91 98765 43210</string>
+    <string name="auth_send_otp">Send OTP</string>
+
+    <!-- OTP -->
+    <string name="otp_title">Enter verification code</string>
+    <string name="otp_sent_to">Code sent to %s</string>
+    <string name="otp_resend">Resend</string>
+    <string name="otp_resend_in">Resend in %ds</string>
+    <string name="otp_verify">Verify</string>
+
+    <!-- MPIN -->
+    <string name="mpin_title">Set your MPIN</string>
+    <string name="mpin_subtitle">Create a 6-digit PIN to secure your app</string>
+    <string name="mpin_confirm_title">Confirm your MPIN</string>
+    <string name="mpin_confirm_subtitle">Re-enter your 6-digit PIN</string>
+
+    <!-- Legal &amp; Compliance -->
+    <string name="terms_title">Terms of Service</string>
+    <string name="terms_last_updated">Last Updated: June 12, 2024</string>
+    <string name="terms_section1_title">1. Acceptance of Terms</string>
+    <string name="terms_section1_body">By accessing or using the Monytix AI financial services platform, you agree to be bound by these Terms of Service. If you do not agree to all of these terms, do not use our services.</string>
+    <string name="terms_section2_title">2. AI Financial Insights</string>
+    <string name="terms_section2_body">Monytix utilizes advanced artificial intelligence to provide financial suggestions. These insights are for informational purposes only and do not constitute professional financial advice. Always consult with a licensed professional before making significant investment decisions. For more information on how we handle your financial data please refer to our Data.</string>
+    <string name="terms_checkbox">I have read and agree to the Terms of Service and Privacy Policy.</string>
+    <string name="terms_agree">I Agree</string>
+    <string name="terms_content">By using Monytix, you agree to our Terms of Service. These govern your use of our financial tracking and AI-powered insights. Please read them carefully before proceeding.</string>
+    <string name="terms_continue">Continue</string>
+
+    <string name="privacy_title">Privacy Policy</string>
+    <string name="privacy_data_consent_title">Privacy &amp; Data Consent</string>
+    <string name="privacy_your_privacy_matters">Your Privacy Matters.</string>
+    <string name="privacy_subtitle">At Monytix AI, we value your trust. Learn how we use your data to power your financial future.</string>
+    <string name="privacy_card_ai_title">AI Personalization</string>
+    <string name="privacy_card_ai_desc">We use your transaction history to provide tailored spending insights and AI-driven wealth advice.</string>
+    <string name="privacy_card_security_title">Advanced Security</string>
+    <string name="privacy_card_security_desc">Your data is encrypted with bank-grade standards and used to detect fraudulent activities instantly.</string>
+    <string name="privacy_card_compliance_title">Regulatory Compliance</string>
+    <string name="privacy_card_compliance_desc">We adhere to global financial regulations ensuring your data is handled with legal transparency.</string>
+    <string name="privacy_personalized_marketing">Personalized Marketing</string>
+    <string name="privacy_proceed">Proceed</string>
+    <string name="privacy_no_messages">We do not read your personal messages.</string>
+    <string name="privacy_no_sell">We do not sell your financial data.</string>
+    <string name="privacy_encryption">Your data is encrypted at rest and in transit.</string>
+    <string name="privacy_continue">Continue</string>
+
+    <string name="data_consent_title">Data Processing Consent</string>
+    <string name="data_consent_description">We analyze your transaction data to generate insights and predictions. This helps us provide personalized spending analysis and future forecasts. Your data is processed securely and never shared with third parties.</string>
+    <string name="data_consent_checkbox">I accept that my transaction data will be analyzed for insights and predictions</string>
+    <string name="data_consent_continue">Continue</string>
+
+    <!-- Data Setup / Financial -->
+    <string name="data_setup_title">Add your financial data</string>
+    <string name="data_setup_subtitle">Upload a bank statement or add transactions manually</string>
+    <string name="upload_option_title">Upload Bank Statement</string>
+    <string name="upload_option_subtitle">PDF, CSV, or Excel</string>
+    <string name="manual_option_title">Manual Add</string>
+    <string name="manual_option_subtitle">Add Income, Expenses, Loans, Investments</string>
+
+    <!-- Habits / Spending Patterns -->
+    <string name="habit_health_healthy">Healthy</string>
+    <string name="habit_health_moderate">Moderate</string>
+    <string name="habit_health_needs_attention">Needs Attention</string>
+    <string name="habits_section_title">Your Spending Patterns</string>
+    <string name="habit_behavior_score">Your Money Behavior Score</string>
+    <string name="habit_based_on_count">Based on %d financial habits</string>
+    <string name="habit_view_details">View details</string>
+
+    <string name="upload_title">Upload Bank Statement</string>
+    <string name="upload_subtitle">Select a PDF, CSV, or Excel file from your device</string>
+    <string name="upload_formats">Supported: PDF, CSV, XLS, XLSX</string>
+    <string name="upload_tap">Tap to select file</string>
+
+    <string name="parsing_title">Processing your statement</string>
+    <string name="parsing_subtitle">AI is analyzing your transactions. This may take a moment.</string>
+    <string name="upload_processing_backend">Processing in backend…</string>
+    <string name="upload_processing_backend_subtitle">We\'re analyzing your statement. This may take a moment.</string>
+    <string name="upload_processing_complete">Processing complete</string>
+    <string name="upload_processing_complete_subtitle">Your data has been refreshed.</string>
+    <string name="upload_processing_done">Done</string>
+    <string name="upload_processing_retry">Retry</string>
+
+    <string name="import_success_title">Data imported!</string>
+    <string name="import_success_subtitle">Your transactions have been imported and categorized.</string>
+    <string name="import_success_done">See your insights</string>
+
+    <!-- First Insight Experience -->
+    <string name="analyzing_title">We\'re analyzing your finances…</string>
+    <string name="analyzing_subtitle">AI is crunching the numbers to give you personalized insights</string>
+
+    <string name="insight_reveal_title">Your financial snapshot</string>
+    <string name="insight_reveal_subtitle">Here\'s what we found from your transactions</string>
+    <string name="insight_burn_rate">Monthly burn rate</string>
+    <string name="insight_burn_rate_desc">Total spending this month</string>
+    <string name="insight_top_categories">Top 3 spending categories</string>
+    <string name="insight_savings_rate">Savings rate</string>
+    <string name="insight_savings_rate_desc">Income saved after expenses</string>
+    <string name="insight_emi_risk">Upcoming EMI risk</string>
+    <string name="insight_emi_risk_desc">Loan/EMI payments this month</string>
+    <string name="insight_no_emi">None detected</string>
+    <string name="insight_emi_safe_desc">No EMIs or loan payments in your data</string>
+    <string name="insight_done">View Dashboard</string>
+
+    <string name="manual_income">Add Income</string>
+    <string name="manual_expense">Add Expense</string>
+    <string name="manual_loan">Add Loan</string>
+    <string name="manual_investment">Add Investment</string>
+    <string name="manual_add">Add</string>
+
+    <!-- Main Dashboard -->
+    <string name="dash_total_balance">Total Balance</string>
+    <string name="dash_income_vs_expenses">Income vs Expenses</string>
+    <string name="dash_loans_emis">Loans &amp; EMIs</string>
+    <string name="dash_credit_usage">Credit Usage</string>
+    <string name="dash_ai_insights">AI Insights</string>
+    <string name="dash_net_worth">Net Worth</string>
+    <string name="dash_future_forecast">Future Forecast</string>
+    <string name="dash_loans_this_month">This month</string>
+    <string name="dash_no_loans">No loans detected</string>
+    <string name="dash_credit_this_month">This month</string>
+    <string name="dash_no_credit">No credit card spend</string>
+    <string name="dash_insight_no_data">Add transactions to get AI insights</string>
+    <string name="dash_insight_high_wants">Wants spending is %d%% of income. Consider cutting back.</string>
+    <string name="dash_insight_moderate_wants">Wants at %d%% of income. Room to optimize.</string>
+    <string name="dash_insight_good_wants">Wants at %d%% of income. Good balance!</string>
+    <string name="dash_net_worth_desc">Net flow this month: %s</string>
+    <string name="dash_forecast_save">At this rate, you could save %s next month</string>
+    <string name="dash_forecast_deficit">Spending exceeds income by %s. Review expenses.</string>
+    <string name="dash_no_data">No financial data yet</string>
+    <string name="dash_no_data_hint">Go to Data tab to upload a statement or add transactions</string>
+
+    <!-- Security &amp; Risk -->
+    <string name="device_verification_title">Device Verification</string>
+    <string name="device_verification_desc">Verifying your device for secure access to Monytix AI</string>
+    <string name="device_verification_continue">Verify Now</string>
+    <string name="device_verification_support">Trouble verifying?</string>
+    <string name="device_encryption">END-TO-END ENCRYPTION</string>
+    <string name="device_new_title">New device detected</string>
+    <string name="device_new_desc">We noticed you\'re signing in from a new device. If this is you, continue. If not, contact support immediately.</string>
+
+    <string name="session_expired_title">Session expired</string>
+    <string name="session_expired_desc">For your security, please sign in again.</string>
+    <string name="session_expired_login">Sign in again</string>
+
+    <string name="suspicious_activity_title">Suspicious activity detected</string>
+    <string name="suspicious_activity_desc">We detected unusual activity on your account. Please secure your account or contact support.</string>
+    <string name="suspicious_activity_secure">Secure my account</string>
+    <string name="suspicious_activity_support">Contact support</string>
+
+    <!-- Production extras -->
+    <string name="maintenance_title">Under maintenance</string>
+    <string name="maintenance_desc">We\'re making Monytix better. Please check back shortly.</string>
+
+    <string name="internet_error_title">No internet connection</string>
+    <string name="internet_error_desc">Please check your connection and try again.</string>
+    <string name="internet_error_retry">Retry</string>
+
+    <string name="server_down_title">Service temporarily unavailable</string>
+    <string name="server_down_desc">We\'re experiencing technical difficulties. Please try again later.</string>
+    <string name="server_down_mobile_hint">On mobile data? Try: Settings → Network → Private DNS → set to \'dns.google\' (bypasses carrier DNS issues).</string>
+    <string name="server_down_retry">Retry</string>
+    <string name="server_down_continue">Continue anyway</string>
+
+    <!-- Empty states -->
+    <string name="empty_no_transactions_title">No transactions yet</string>
+    <string name="empty_no_transactions_hint">Upload a bank statement or add transactions manually to get started.</string>
+    <string name="empty_no_transactions_action">Add transaction</string>
+    <string name="load_more_with_count">Load more (%d left)</string>
+
+    <string name="empty_no_bank_title">No bank linked</string>
+    <string name="empty_no_bank_hint">Link your bank or upload a statement to see your finances in one place.</string>
+    <string name="empty_no_bank_action">Link bank</string>
+    <string name="empty_no_bank_manual">Upload statement</string>
+
+    <string name="empty_no_goals_title">No goals created</string>
+    <string name="empty_no_goals_hint">Set savings goals to track your progress and stay motivated.</string>
+    <string name="empty_no_goals_action">Create goal</string>
+
+    <string name="empty_no_insights_title">No insights available</string>
+    <string name="empty_no_insights_hint">Add your financial data to get AI-powered insights and forecasts.</string>
+    <string name="empty_no_insights_action">Add data</string>
+
+    <!-- Profile / Founder extras -->
+    <string name="profile_title">Profile</string>
+    <string name="profile_guest">Guest</string>
+    <string name="profile_account">Account</string>
+    <string name="profile_logout">Log out</string>
+    <string name="profile_data_export">Export my data</string>
+    <string name="profile_deactivate">Deactivate account</string>
+    <string name="profile_re_kyc">Re-verify identity</string>
+    <string name="profile_consent_withdrawal">Withdraw consent</string>
+    <string name="profile_danger_zone">Danger zone</string>
+    <string name="profile_delete_account">Delete account</string>
+
+    <string name="logout_confirm_title">Log out?</string>
+    <string name="logout_confirm_desc">You will need to sign in again to access your data.</string>
+    <string name="logout_confirm_yes">Log out</string>
+    <string name="logout_confirm_cancel">Cancel</string>
+
+    <string name="delete_account_title">Delete account?</string>
+    <string name="delete_account_desc">This will permanently delete your account and all data. This action cannot be undone.</string>
+    <string name="delete_account_confirm">Delete</string>
+    <string name="delete_account_cancel">Cancel</string>
+
+    <!-- Quick Tour (post-login) -->
+    <string name="quick_tour_welcome_title">Your AI Financial Command Center</string>
+    <string name="quick_tour_welcome_subtitle">MolyConsole is your cockpit. See net worth, spending, goals, and AI insights in one place.</string>
+    <string name="quick_tour_tabs_title">Navigate with the bottom bar</string>
+    <string name="quick_tour_tab_home">MolyConsole (Home)</string>
+    <string name="quick_tour_tab_home_desc">Overview, net worth, today\'s intelligence, recent transactions</string>
+    <string name="quick_tour_tab_spend">SpendSense</string>
+    <string name="quick_tour_tab_spend_desc">Transactions, categories, upload statements, add manually</string>
+    <string name="quick_tour_tab_goals">GoalTracker</string>
+    <string name="quick_tour_tab_goals_desc">Set and track savings goals</string>
+    <string name="quick_tour_tab_budget">BudgetPilot</string>
+    <string name="quick_tour_tab_budget_desc">Plan and manage your budget</string>
+    <string name="quick_tour_tab_moments">MoneyMoments</string>
+    <string name="quick_tour_tab_moments_desc">Habits, nudges, and money moments</string>
+    <string name="quick_tour_tab_profile">Profile</string>
+    <string name="quick_tour_tab_profile_desc">Account, settings, logout</string>
+    <string name="quick_tour_get_started_title">What to do first</string>
+    <string name="quick_tour_get_started_subtitle">Add your financial data to unlock AI insights and a full dashboard.</string>
+    <string name="quick_tour_tip_upload">• Upload a bank statement (PDF/CSV/Excel) from the SpendSense tab or the upload icon on Home.</string>
+    <string name="quick_tour_tip_manual">• Or add income and expenses manually from SpendSense to get started quickly.</string>
+    <string name="quick_tour_next">Next</string>
+    <string name="quick_tour_lets_go">Let\'s go</string>
+    <string name="quick_tour_skip">Skip tour</string>
+
+    <!-- In-app guided tour overlay (per-step) -->
+    <string name="guided_tour_step_upload_title">Upload your first statement</string>
+    <string name="guided_tour_step_upload_body">Use the upload button above to add a bank statement (PDF, CSV, or Excel). We\'ll wait until the backend finishes processing, then you can see your data here.</string>
+    <string name="guided_tour_step_upload_skip">I\'ll do this later</string>
+    <string name="guided_tour_step_home_title">MolyConsole – Your overview</string>
+    <string name="guided_tour_step_home_body">See net worth, today\'s intelligence, spending summary, and recent transactions in one place.</string>
+    <string name="guided_tour_step_spend_title">SpendSense – Transactions &amp; insights</string>
+    <string name="guided_tour_step_spend_body">View and categorize transactions, upload statements, add entries manually, and see spending insights.</string>
+    <string name="guided_tour_step_goals_title">GoalTracker</string>
+    <string name="guided_tour_step_goals_body">Set savings goals and track your progress.</string>
+    <string name="guided_tour_step_budget_title">BudgetPilot</string>
+    <string name="guided_tour_step_budget_body">Plan and manage your budget by category.</string>
+    <string name="guided_tour_step_moments_title">MoneyMoments</string>
+    <string name="guided_tour_step_moments_body">Habits, nudges, and money moments to stay on track.</string>
+    <string name="guided_tour_step_profile_title">Profile</string>
+    <string name="guided_tour_step_profile_body">Account, settings, and sign out.</string>
+    <string name="guided_tour_step_done_title">You\'re all set</string>
+    <string name="guided_tour_step_done_body">You can always use the bottom bar to switch between sections. Happy tracking!</string>
+    <string name="guided_tour_done">Done</string>
+
+    <!-- Biometrics -->
+    <string name="biometric_title">Enable faster login</string>
+    <string name="biometric_subtitle">Use Face ID or Fingerprint for quicker access</string>
+    <string name="biometric_enable">Enable</string>
+    <string name="biometric_skip">Skip</string>
+    <string name="biometric_login_title">Biometric Login</string>
+    <string name="biometric_login_subtitle">Log in using your fingerprint or face</string>
+    <string name="biometric_use_password">Use Password</string>
+    <string name="auth_login_with_biometrics">Login with Biometrics</string>
+    <string name="auth_biometric_session_expired">Session expired. Please sign in with your password.</string>
+</resources>

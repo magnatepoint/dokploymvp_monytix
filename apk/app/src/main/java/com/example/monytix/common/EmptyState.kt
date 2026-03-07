@@ -83,6 +83,37 @@ fun EmptyStateNoInsights(
 }
 
 @Composable
+fun EmptyStateCommandCenter(
+    onUploadStatement: () -> Unit,
+    onAddTransaction: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    EmptyStateTemplate(
+        modifier = modifier,
+        title = stringResource(R.string.empty_command_center_title),
+        subtitle = stringResource(R.string.empty_command_center_hint),
+        actionLabel = stringResource(R.string.empty_command_center_action),
+        onAction = onUploadStatement,
+        secondaryActionLabel = if (onAddTransaction != null) stringResource(R.string.empty_command_center_secondary) else null,
+        onSecondaryAction = onAddTransaction
+    )
+}
+
+@Composable
+fun EmptyStateNoForecast(
+    onUploadStatement: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    EmptyStateTemplate(
+        modifier = modifier,
+        title = stringResource(R.string.empty_no_forecast_title),
+        subtitle = stringResource(R.string.empty_no_forecast_hint),
+        actionLabel = stringResource(R.string.empty_no_forecast_action),
+        onAction = onUploadStatement
+    )
+}
+
+@Composable
 private fun EmptyStateTemplate(
     title: String,
     subtitle: String,

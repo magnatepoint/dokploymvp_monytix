@@ -62,6 +62,7 @@ import androidx.fragment.app.FragmentActivity
 import com.example.monytix.R
 import com.example.monytix.analytics.AnalyticsHelper
 import com.example.monytix.ui.MonytixSpinner
+import com.example.monytix.ui.TrustBannerEncryption
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import com.example.monytix.ui.theme.Background
@@ -382,6 +383,8 @@ private fun LoginContent(
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(16.dp))
+            TrustBannerEncryption(modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(24.dp))
         }
     }

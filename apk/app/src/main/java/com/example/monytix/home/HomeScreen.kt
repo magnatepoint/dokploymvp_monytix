@@ -53,6 +53,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -76,6 +77,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.monytix.R
+import com.example.monytix.common.EmptyStateCommandCenter
 import com.example.monytix.data.AccountItemResponse
 import com.example.monytix.ui.MonytixSpinner
 import com.example.monytix.data.KpiResponse
@@ -92,6 +94,7 @@ import com.example.monytix.ui.theme.BackgroundGradientBottom
 import com.example.monytix.ui.theme.BackgroundGradientTop
 import com.example.monytix.ui.theme.GlassCard
 import com.example.monytix.ui.theme.SurfaceElevated
+import com.example.monytix.assistant.AssistantSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,6 +109,7 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(ConsoleTab.OVERVIEW) }
+    var showAssistant by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { AnalyticsHelper.logScreenView("home") }
     LaunchedEffect(isSelected) {
@@ -184,44 +188,129 @@ fun HomeScreen(
                     )
             ) {
             WelcomeBanner(username = uiState.userEmail ?: "User")
-            TabBar(selectedTab = selectedTab, onTabSelected = {
-                AnalyticsHelper.logEvent("tab_selected", mapOf("tab" to it.name.lowercase()))
-                selectedTab = it
-            })
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading,
                 onRefresh = { viewModel.refresh() }
             ) {
                 if (uiState.isLoading && uiState.kpis == null) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        MonytixSpinner()
-                    }
+                    CommandCenterSkeleton()
                 } else {
-                    AnimatedContent(
-                        targetState = selectedTab,
-                        transitionSpec = { fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(200)) },
-                        label = "tab_content"
-                    ) { tab ->
-                        when (tab) {
-                            ConsoleTab.OVERVIEW -> OverviewTab(
-                                viewModel = viewModel,
-                                onTabSelected = { selectedTab = it },
-                                onNavigateTo = onNavigateTo,
-                                onShowSnackbar = onShowSnackbar
-                            )
-                            ConsoleTab.ACCOUNTS -> AccountsTab(accounts = uiState.accounts, onRetry = { viewModel.refresh() })
-                            ConsoleTab.SPENDING -> SpendingTab(viewModel = viewModel)
-                            ConsoleTab.GOALS -> GoalsTab(viewModel = viewModel, onNavigateTo = onNavigateTo)
-                            ConsoleTab.AI_INSIGHT -> AIInsightTab(viewModel = viewModel)
-                        }
+                    CommandCenterContent(
+                        viewModel = viewModel,
+                        onNavigateTo = onNavigateTo,
+                        onShowSnackbar = onShowSnackbar,
+                        onLaunchFilePicker = onLaunchFilePicker,
+                        onAddTransaction = onAddTransaction
+                    )
+                }
+            }
+            if (showAssistant) {
+                AssistantSheet(onDismiss = { showAssistant = false })
+            }
+            FloatingActionButton(
+                onClick = {
+                    AnalyticsHelper.logEvent("assistant_open")
+                    showAssistant = true
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                containerColor = AccentPrimary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(Icons.Default.Lightbulb, contentDescription = "Ask MONYTIX")
+            }
+        }
+    }
+    }
+}
+
+@Composable
+private fun CommandCenterSkeleton() {
+    val infiniteTransition = rememberInfiniteTransition(label = "skeleton")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "skeleton_alpha"
+    )
+    val colorScheme = MaterialTheme.colorScheme
+    val skeletonColor = colorScheme.onSurface.copy(alpha = alpha)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        repeat(3) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = colorScheme.surface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .height(20.dp)
+                                .fillMaxWidth(0.5f)
+                                .background(skeletonColor, RoundedCornerShape(4.dp))
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .height(28.dp)
+                                .fillMaxWidth()
+                                .background(skeletonColor, RoundedCornerShape(4.dp))
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .height(14.dp)
+                                .fillMaxWidth(0.7f)
+                                .background(skeletonColor, RoundedCornerShape(4.dp))
+                        )
                     }
                 }
             }
         }
-    }
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .background(skeletonColor, RoundedCornerShape(12.dp))
+            )
+        }
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .background(skeletonColor, RoundedCornerShape(12.dp))
+            )
+        }
+        repeat(3) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = colorScheme.surface)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .height(14.dp)
+                                .fillMaxWidth(0.6f)
+                                .background(skeletonColor, RoundedCornerShape(4.dp))
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -246,6 +335,340 @@ private fun WelcomeBanner(username: String) {
             style = MaterialTheme.typography.bodySmall,
             color = colorScheme.onBackground.copy(alpha = 0.6f)
         )
+    }
+}
+
+@Composable
+private fun CommandCenterContent(
+    viewModel: HomeViewModel,
+    onNavigateTo: (AppDestinations) -> Unit,
+    onShowSnackbar: (String) -> Unit,
+    onLaunchFilePicker: () -> Unit,
+    onAddTransaction: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    if (viewModel.hasNoTransactionData()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(24.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            item {
+                EmptyStateCommandCenter(
+                    onUploadStatement = onLaunchFilePicker,
+                    onAddTransaction = onAddTransaction
+                )
+            }
+        }
+        return
+    }
+    val health = viewModel.healthState()
+    val risk = viewModel.riskState()
+    val next = viewModel.nextAction()
+    val goals = viewModel.transformGoals()
+    val topInsights = viewModel.topInsightsForCommandCenter()
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            CommandCenterEnter(delayMillis = 0) { HealthCard(health = health) }
+        }
+        item {
+            CommandCenterEnter(delayMillis = 50) { RiskCard(risk = risk) }
+        }
+        item {
+            CommandCenterEnter(delayMillis = 100) {
+                CtaCard(
+                    nextAction = next,
+                    onUpload = onLaunchFilePicker,
+                    onAddTransaction = onAddTransaction,
+                    onNavigateTo = onNavigateTo
+                )
+            }
+        }
+        if (goals.isNotEmpty()) {
+            item {
+                CommandCenterEnter(delayMillis = 150) {
+                    GoalPulseRow(
+                        goals = goals,
+                        onSeeAll = { onNavigateTo(AppDestinations.GOALS) }
+                    )
+                }
+            }
+        }
+        item {
+            CommandCenterEnter(delayMillis = 200) {
+                ForecastStrip(onSeeFuture = { onNavigateTo(AppDestinations.FUTURE) })
+            }
+        }
+        if (topInsights.isNotEmpty()) {
+            item {
+                CommandCenterEnter(delayMillis = 220) {
+                    Text(
+                        text = "Insights",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+            items(topInsights) { insight ->
+                CommandCenterEnter(delayMillis = 250) {
+                    InsightCardCompact(
+                        title = insight.title,
+                        message = insight.message,
+                        onClick = {
+                            onNavigateTo(AppDestinations.DATA)
+                            onShowSnackbar(insight.message)
+                        }
+                    )
+                }
+            }
+        }
+        if (uiState.recentTransactions.isNotEmpty()) {
+            item {
+                CommandCenterEnter(delayMillis = 320) {
+                    Text(
+                        text = "Recent Transactions",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+            items(uiState.recentTransactions.take(5), key = { it.txn_id }) { txn ->
+                CommandCenterEnter(delayMillis = 350) {
+                    RecentTransactionRow(
+                        transaction = txn,
+                        onClick = {
+                            onNavigateTo(AppDestinations.DATA)
+                            onShowSnackbar("View all in SpendSense.")
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommandCenterEnter(
+    delayMillis: Int,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        visible = true,
+        enter = slideInVertically(
+            initialOffsetY = { it / 2 },
+            animationSpec = tween(durationMillis = 350, delayMillis = delayMillis)
+        ) + fadeIn(animationSpec = tween(durationMillis = 350, delayMillis = delayMillis))
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun HealthCard(health: HealthState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                text = "Financial health",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${health.score}",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = AccentPrimary
+                )
+                Text(
+                    text = when (health.trend) {
+                        "up" -> "↗"
+                        "down" -> "↘"
+                        else -> "→"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = health.subtext,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun RiskCard(risk: RiskState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = risk.label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = risk.reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun CtaCard(
+    nextAction: NextAction,
+    onUpload: () -> Unit,
+    onAddTransaction: () -> Unit,
+    onNavigateTo: (AppDestinations) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = AccentPrimary.copy(alpha = 0.15f)),
+        border = BorderStroke(1.dp, AccentPrimary.copy(alpha = 0.4f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = nextAction.label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    when (nextAction.type) {
+                        "upload" -> onUpload()
+                        "insights" -> onNavigateTo(AppDestinations.DATA)
+                        "goal" -> onNavigateTo(AppDestinations.GOALS)
+                        "forecast" -> onNavigateTo(AppDestinations.FUTURE)
+                        else -> onUpload()
+                    }
+                },
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = AccentPrimary, contentColor = MaterialTheme.colorScheme.onPrimary)
+            ) {
+                Text(
+                    when (nextAction.type) {
+                        "upload" -> "Upload statement"
+                        "insights" -> "Review insights"
+                        "goal" -> "View goals"
+                        "forecast" -> "See forecast"
+                        else -> nextAction.label
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GoalPulseRow(
+    goals: List<ConsoleGoal>,
+    onSeeAll: () -> Unit
+) {
+    val totalToGo = goals.sumOf { (it.targetAmount - it.savedAmount).coerceAtLeast(0.0) }
+    val fmt = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US)
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onSeeAll),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${goals.size} goals · ₹${fmt.format(totalToGo.toLong())} to go this month",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "See all",
+                style = MaterialTheme.typography.labelMedium,
+                color = AccentPrimary
+            )
+        }
+    }
+}
+
+@Composable
+private fun ForecastStrip(onSeeFuture: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onSeeFuture),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Next 30 days",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "See forecast →",
+                style = MaterialTheme.typography.labelMedium,
+                color = AccentPrimary
+            )
+        }
+    }
+}
+
+@Composable
+private fun InsightCardCompact(
+    title: String,
+    message: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = AccentPrimary
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2
+            )
+        }
     }
 }
 

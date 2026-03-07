@@ -69,6 +69,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.monytix.analytics.AnalyticsHelper
+import com.example.monytix.common.EmptyStateNoGoals
 import com.example.monytix.data.GoalProgressItem
 import com.example.monytix.data.GoalResponse
 import com.example.monytix.ui.MonytixSpinner
@@ -405,7 +406,9 @@ private fun OverviewTab(
     }
 
     if (uiState.goals.isEmpty()) {
-        NoGoalsEmptyState(onAddGoal = onAddGoal)
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            EmptyStateNoGoals(onCreateGoal = onAddGoal)
+        }
         return
     }
 
@@ -516,32 +519,18 @@ private fun GoalsListTab(
         }
         if (filteredGoals.isEmpty()) {
             item {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(if (filter == "completed") "✅" else "🎯", style = MaterialTheme.typography.displayLarge)
-                    Text(
-                        if (filter == "completed") "No Completed Goals" else "No Goals",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White
-                    )
-                    Text(
-                        if (filter == "completed") "Complete your first goal to see it here." else "Create your first goal to start tracking.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                    )
-                    if (filter != "completed") {
-                        Spacer(Modifier.height(16.dp))
-                        Button(
-                            onClick = onAddGoal,
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                            Text("Set Up Goals")
-                        }
+                if (filter == "completed") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("✅", style = MaterialTheme.typography.displayLarge)
+                        Text("No Completed Goals", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                        Text("Complete your first goal to see it here.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
                     }
+                } else {
+                    EmptyStateNoGoals(onCreateGoal = onAddGoal)
                 }
             }
         } else {
@@ -829,34 +818,6 @@ private fun MetricCard(label: String, value: String, color: Color, modifier: Mod
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
             Spacer(Modifier.height(4.dp))
             Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color)
-        }
-    }
-}
-
-@Composable
-private fun NoGoalsEmptyState(onAddGoal: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text("🎯", style = MaterialTheme.typography.displayLarge)
-        Spacer(Modifier.height(16.dp))
-        Text("No Goals Yet", style = MaterialTheme.typography.titleLarge, color = Color.White)
-        Text(
-            "Set up your financial goals first to start tracking progress.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-        )
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = onAddGoal,
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-        ) {
-            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-            Text("Set Up Goals")
         }
     }
 }

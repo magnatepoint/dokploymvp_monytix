@@ -66,6 +66,15 @@ fun GoalDetailScreen(
         } else monthlyRequired
     val gap = (monthlyRequired - currentAvg).coerceAtLeast(0.0)
     val isOnTrack = gap <= 0 || progressPct >= 95
+    val riskState = when {
+        progressPct >= 95 -> "complete"
+        isOnTrack -> "on_track"
+        progressPct >= 40 -> "behind"
+        else -> "at_risk"
+    }
+    val projectedDate = progress?.projected_completion_date
+        ?: goal.target_date?.takeIf { isOnTrack }
+        ?: "—"
 
     Column(
             modifier = Modifier
@@ -74,6 +83,9 @@ fun GoalDetailScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 0. Risk state strip
+            RiskStateStrip(riskState = riskState)
+
             // 1. Hero Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -136,19 +148,37 @@ fun GoalDetailScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    // AI plan: one line summary
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        if (isOnTrack && progressPct < 95)
+                            "AI plan: Save ${formatCurrency(monthlyRequired)}/month to hit target by ${goal.target_date ?: "deadline"}."
+                        else if (gap > 0)
+                            "AI plan: Top up by ${formatCurrency(gap)}/month to stay on track."
+                        else
+                            "AI plan: You're on track. Keep current pace.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AccentPrimary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(12.dp))
                     goal.target_date?.let { target ->
-                        Spacer(Modifier.height(12.dp))
                         Text("Required to finish by $target:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
                         Text(formatCurrency(monthlyRequired) + "/month", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(8.dp))
-                        Text("Current average contribution:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                        Text(formatCurrency(currentAvg) + "/month", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                        Text("Current pace: ${formatCurrency(currentAvg)}/month", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        Spacer(Modifier.height(4.dp))
+                        Text("Projected completion: $projectedDate", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
                         if (gap > 0) {
                             Spacer(Modifier.height(8.dp))
                             Text("Gap: ${formatCurrency(gap)}/month short", style = MaterialTheme.typography.labelMedium, color = ChartOrange, fontWeight = FontWeight.Medium)
                         }
+                        Spacer(Modifier.height(12.dp))
+                    } ?: run {
+                        Text("Current pace: ${formatCurrency(currentAvg)}/month", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        Text("Projected completion: $projectedDate", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                        Spacer(Modifier.height(12.dp))
                     }
-                    Spacer(Modifier.height(16.dp))
                     Text(
                         "🔥 Action Plan",
                         style = MaterialTheme.typography.titleSmall,
@@ -243,6 +273,36 @@ fun GoalDetailScreen(
             Spacer(Modifier.height(24.dp))
         }
     }
+
+@Composable
+private fun RiskStateStrip(riskState: String) {
+    val (label, color) = when (riskState) {
+        "complete" -> "Complete" to Success
+        "on_track" -> "On track" to ChartGreen
+        "behind" -> "Behind pace" to ChartOrange
+        else -> "At risk" to Color(0xFFFF4D4F)
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.15f)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = color
+            )
+        }
+    }
+}
 
 @Composable
 private fun ActionOptionCard(

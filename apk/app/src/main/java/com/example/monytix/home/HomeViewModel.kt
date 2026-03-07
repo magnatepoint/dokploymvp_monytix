@@ -23,6 +23,7 @@ data class HomeUiState(
     val insights: InsightsResponse? = null,
     val goalsProgress: List<GoalProgressItem> = emptyList(),
     val recentTransactions: List<TransactionRecordResponse> = emptyList(),
+    val topInsightsFromApi: List<AiInsight>? = null,
     val backendStatus: String? = null,
     val backendError: String? = null,
     val userEmail: String? = null,
@@ -51,6 +52,24 @@ data class AiInsight(
     val message: String,
     val type: String,
     val confidence: Float? = null
+)
+
+/** First-fold state for command center home. */
+data class HealthState(
+    val score: Int,
+    val trend: String,
+    val subtext: String
+)
+
+data class RiskState(
+    val label: String,
+    val reason: String
+)
+
+data class NextAction(
+    val type: String,
+    val label: String,
+    val payload: String?
 )
 
 class HomeViewModel : ViewModel() {
@@ -93,6 +112,10 @@ class HomeViewModel : ViewModel() {
             val goalsResult = withContext(Dispatchers.IO) { BackendApi.getGoalsProgress(token) }
             val sessionResult = withContext(Dispatchers.IO) { BackendApi.getSession(token) }
             val transactionsResult = withContext(Dispatchers.IO) { BackendApi.getTransactions(token, limit = 5) }
+            val topInsightsResult = withContext(Dispatchers.IO) { BackendApi.getTopInsights(token, limit = 5) }
+            val topInsightsFromApi = topInsightsResult.getOrNull()?.insights?.map { i ->
+                AiInsight(i.id, i.title, i.message, i.type, i.confidence?.toFloat())
+            }
             _uiState.update {
                 it.copy(
                     kpis = kpisResult.getOrNull(),
@@ -100,6 +123,7 @@ class HomeViewModel : ViewModel() {
                     insights = insightsResult.getOrNull(),
                     goalsProgress = goalsResult.getOrNull()?.goals ?: emptyList(),
                     recentTransactions = transactionsResult.getOrNull()?.transactions ?: emptyList(),
+                    topInsightsFromApi = topInsightsFromApi,
                     userEmail = sessionResult.getOrNull()?.email,
                     isLoading = false
                 )
@@ -165,6 +189,10 @@ class HomeViewModel : ViewModel() {
         val trends = _uiState.value.insights?.spending_trends ?: return emptyList()
         return trends.map { it.net.toFloat() }
     }
+
+    /** Top 3 insights for command center: from API if available, else from generateAiInsights(). */
+    fun topInsightsForCommandCenter(): List<AiInsight> =
+        _uiState.value.topInsightsFromApi?.take(3) ?: generateAiInsights().take(3)
 
     fun generateAiInsights(): List<AiInsight> {
         val kpis = _uiState.value.kpis ?: return emptyList()
@@ -279,6 +307,47 @@ class HomeViewModel : ViewModel() {
         val hasAssets = (kpis.assets_amount ?: 0.0) > 0
         val hasCategories = kpis.top_categories.isNotEmpty()
         return !hasIncome && !hasNeeds && !hasWants && !hasAssets && !hasCategories
+    }
+
+    /** Financial health score 0–100 and trend for first-fold card. */
+    fun healthState(): HealthState {
+        if (hasNoTransactionData()) return HealthState(0, "neutral", "Add data to see your score")
+        val income = _uiState.value.kpis?.income_amount ?: 0.0
+        val expenses = _uiState.value.kpis?.total_debits_amount ?: 0.0
+        val goals = transformGoals()
+        val surplus = income - expenses
+        var score = 50
+        if (income > 0) {
+            val savingsRate = (surplus / income * 100).toInt().coerceIn(-100, 100)
+            score = (50 + savingsRate / 2).coerceIn(0, 100)
+        }
+        val atRisk = goalsAtRiskCount()
+        if (atRisk > 0) score = (score - atRisk * 5).coerceIn(0, 100)
+        val trend = when {
+            surplus > 0 && atRisk == 0 -> "up"
+            surplus < 0 || atRisk > 0 -> "down"
+            else -> "neutral"
+        }
+        return HealthState(score, trend, "Based on cash, goals, and spending")
+    }
+
+    /** Current risk for first-fold card. */
+    fun riskState(): RiskState {
+        if (hasNoTransactionData()) return RiskState("Add your data", "Upload a statement to see risk and opportunities.")
+        if (!isCashFlowPositive()) return RiskState("Spending ahead of income", "This month's outgo exceeds income. Review expenses.")
+        val atRisk = goalsAtRiskCount()
+        if (atRisk > 0) return RiskState("$atRisk goal${if (atRisk > 1) "s" else ""} at risk", "Consider topping up to stay on track.")
+        return RiskState("You're on track", "Cash flow is positive and goals are in good shape.")
+    }
+
+    /** Next best action for CTA card. */
+    fun nextAction(): NextAction {
+        if (hasNoTransactionData()) return NextAction("upload", "Upload this week's statement", null)
+        val insights = generateAiInsights()
+        if (insights.size >= 2) return NextAction("insights", "Review ${insights.size} insights", null)
+        val goals = transformGoals()
+        if (goals.any { g -> g.targetAmount > 0 && (g.savedAmount / g.targetAmount) < 0.5 }) return NextAction("goal", "Top up a goal", null)
+        return NextAction("forecast", "See your financial future", null)
     }
 
     fun checkBackend() {

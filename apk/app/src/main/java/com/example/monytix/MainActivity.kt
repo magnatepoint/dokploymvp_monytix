@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -86,6 +87,7 @@ import com.example.monytix.goaltracker.GoalTrackerScreen
 import com.example.monytix.moneymoments.MoneyMomentsScreen
 import com.example.monytix.home.HomeScreen
 import com.example.monytix.profile.ProfileScreen
+import com.example.monytix.future.FutureScreen
 import com.example.monytix.spendsense.PendingManualAddHolder
 import com.example.monytix.spendsense.PendingUploadHolder
 import com.example.monytix.spendsense.UploadProcessingState
@@ -267,6 +269,7 @@ internal fun MainContent(
                 AppDestinations.entries.forEach {
                     val fullName = when (it) {
                         AppDestinations.HOME -> "MolyConsole"
+                        AppDestinations.FUTURE -> "Financial Future"
                         AppDestinations.DATA -> "SpendSense"
                         AppDestinations.GOALS -> "GoalTracker"
                         AppDestinations.BUDGET -> "BudgetPilot"
@@ -311,6 +314,10 @@ internal fun MainContent(
                                     PendingManualAddHolder.state.value = true
                                 }
                             }
+                        )
+                        AppDestinations.FUTURE -> FutureScreen(
+                            modifier = Modifier.padding(innerPadding),
+                            onUploadStatement = { (context as? MainActivity)?.launchFilePicker() }
                         )
                         AppDestinations.DATA -> SpendSenseScreen(
                             modifier = Modifier.padding(innerPadding),
@@ -438,6 +445,7 @@ enum class AppDestinations(
     val icon: ImageVector,
 ) {
     HOME("Home", Icons.Default.Home),
+    FUTURE("Future", Icons.Default.ShowChart),
     DATA("Spend", Icons.Default.AttachMoney),
     GOALS("Goals", Icons.Default.Flag),
     BUDGET("Budget", Icons.Default.PieChart),

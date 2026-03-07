@@ -1,10 +1,13 @@
 """MoneyMoments API routes."""
 
+import logging
 from datetime import date
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 
 from app.auth.dependencies import AuthenticatedUser, get_current_user
@@ -176,6 +179,7 @@ async def evaluate_nudges(
     Evaluate nudge rules for the user and create candidates.
     Typically called by a scheduled job, but can be triggered manually.
     """
+    logger.info(f"POST /nudges/evaluate - user_id={user.user_id}, as_of_date={as_of_date}")
     result = await service.evaluate_and_queue_nudges(firebase_uid_to_uuid(user.user_id), as_of_date)
     return result
 
@@ -191,6 +195,7 @@ async def process_nudges(
     Typically called by a scheduled job.
     If user is provided, only processes for that user.
     """
+    logger.info(f"POST /nudges/process - user_id={user.user_id if user else None}, limit={limit}")
     user_id = firebase_uid_to_uuid(user.user_id) if user else None
     delivered = await service.process_pending_nudges(user_id, limit)
     return {"status": "processed", "delivered": delivered, "count": len(delivered)}
@@ -206,6 +211,7 @@ async def compute_signal(
     Compute daily signal for a user.
     This aggregates spending data needed for nudge rule evaluation.
     """
+    logger.info(f"POST /signals/compute - user_id={user.user_id}, as_of_date={as_of_date}")
     signal = await service.compute_daily_signal(firebase_uid_to_uuid(user.user_id), as_of_date)
     if not signal:
         return {"status": "no_data", "signal": None}

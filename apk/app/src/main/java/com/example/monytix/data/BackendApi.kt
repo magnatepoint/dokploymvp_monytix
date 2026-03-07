@@ -243,6 +243,28 @@ object BackendApi {
         }
     }
 
+    suspend fun getForecast(accessToken: String): Result<ForecastResponse> = withContext(Dispatchers.IO) {
+        runWithFallback("$baseUrl/v1/forecast", "$backupBaseUrl/v1/forecast") { url ->
+            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<ForecastResponse>()
+        }
+    }
+
+    suspend fun getTopInsights(accessToken: String, limit: Int = 5): Result<TopInsightsResponse> = withContext(Dispatchers.IO) {
+        runWithFallback("$baseUrl/v1/spendsense/insights/top?limit=$limit", "$backupBaseUrl/v1/spendsense/insights/top?limit=$limit") { url ->
+            client.get(url) { header("Authorization", "Bearer $accessToken") }.body<TopInsightsResponse>()
+        }
+    }
+
+    suspend fun postAssistantAsk(accessToken: String, prompt: String): Result<AskResponse> = withContext(Dispatchers.IO) {
+        runWithFallback("$baseUrl/v1/assistant/ask", "$backupBaseUrl/v1/assistant/ask") { url ->
+            client.post(url) {
+                header("Authorization", "Bearer $accessToken")
+                contentType(ContentType.Application.Json)
+                setBody(AskRequest(prompt = prompt))
+            }.body<AskResponse>()
+        }
+    }
+
     suspend fun getUserGoals(accessToken: String): Result<List<GoalResponse>> = withContext(Dispatchers.IO) {
         runWithFallback("$baseUrl/v1/goals", "$backupBaseUrl/v1/goals") { url ->
             client.get(url) { header("Authorization", "Bearer $accessToken") }.body<List<GoalResponse>>()
@@ -556,6 +578,19 @@ object BackendApi {
             val response = client.get("$moneymomentsBase/nudges?limit=$limit") {
                 header("Authorization", "Bearer $accessToken")
             }.body<NudgesResponse>()
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getNudgeDiagnose(
+        accessToken: String
+    ): Result<NudgeDiagnoseResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = client.get("$moneymomentsBase/nudges/diagnose") {
+                header("Authorization", "Bearer $accessToken")
+            }.body<NudgeDiagnoseResponse>()
             Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
@@ -979,6 +1014,37 @@ data class GoalProgressItem(
 )
 
 @kotlinx.serialization.Serializable
+data class ForecastRecommendationResponse(val title: String = "", val body: String = "")
+
+@kotlinx.serialization.Serializable
+data class ForecastResponse(
+    val projection_points: List<List<Double>> = emptyList(),
+    val confidence_label: String = "",
+    val risk_strip_label: String? = null,
+    val risk_strip_severity: String = "neutral",
+    val savings_opportunity: String? = null,
+    val recommendations: List<ForecastRecommendationResponse> = emptyList()
+)
+
+@kotlinx.serialization.Serializable
+data class TopInsightItemResponse(
+    val id: String = "",
+    val title: String = "",
+    val message: String = "",
+    val type: String = "",
+    val confidence: Double? = null
+)
+
+@kotlinx.serialization.Serializable
+data class TopInsightsResponse(val insights: List<TopInsightItemResponse> = emptyList())
+
+@kotlinx.serialization.Serializable
+data class AskRequest(val prompt: String = "")
+
+@kotlinx.serialization.Serializable
+data class AskResponse(val answer: String = "")
+
+@kotlinx.serialization.Serializable
 data class UpdatedGoalItem(
     val goal_id: String = "",
     val goal_name: String = "",
@@ -1141,6 +1207,14 @@ data class NudgesResponse(
 )
 
 @kotlinx.serialization.Serializable
+data class NudgeDiagnoseResponse(
+    val has_signal_today: Boolean = false,
+    val pending_candidates: Int = 0,
+    val delivered_count: Int = 0,
+    val suggestion: String = ""
+)
+
+@kotlinx.serialization.Serializable
 data class NudgeInteractionRequest(
     val event_type: String,
     val metadata: Map<String, String>? = null
@@ -1150,7 +1224,8 @@ data class NudgeInteractionRequest(
 data class EvaluateNudgesResponse(
     val status: String = "",
     val count: Int = 0,
-    val candidates: List<String>? = null
+    val candidates: List<String>? = null,
+    val reason: String? = null
 )
 
 @kotlinx.serialization.Serializable
