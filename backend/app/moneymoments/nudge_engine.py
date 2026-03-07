@@ -325,10 +325,12 @@ class NudgeEngine:
         # Compute score (simple for now)
         score = 0.5 if matches else 0.0
         if matches:
-            # Boost score based on signal strength
-            if signal.get("dining_txn_7d", 0) >= 5:
+            # Boost score based on signal strength (coerce None from DB to 0)
+            dining_7d = signal.get("dining_txn_7d") or 0
+            wants_share = signal.get("wants_share_30d") or 0
+            if dining_7d >= 5:
                 score += 0.2
-            if signal.get("wants_share_30d", 0) > 0.40:
+            if wants_share > 0.40:
                 score += 0.2
 
         return (matches, min(1.0, score), reason)
@@ -371,9 +373,9 @@ class NudgeEngine:
         # Calculate save amount (example: 30% of average dining spend)
         save_amount = 0.0
         if signal:
-            avg_dining = float(signal.get("dining_spend_7d", 0)) / max(
-                float(signal.get("dining_txn_7d", 1)), 1
-            )
+            dining_spend = signal.get("dining_spend_7d") or 0
+            dining_txn = signal.get("dining_txn_7d") or 1
+            avg_dining = float(dining_spend) / max(float(dining_txn), 1)
             save_amount = avg_dining * 0.3
 
         # Replace variables
