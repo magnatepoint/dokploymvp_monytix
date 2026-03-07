@@ -58,6 +58,15 @@ class MoneyMomentsViewModel : ViewModel() {
     private fun nudgeRangeTo(state: MoneyMomentsUiState): String =
         state.nudgeToDate ?: defaultNudgeToDate()
 
+    /** Max days for compute/diagnose/evaluate to avoid server timeouts (per-day work). */
+    private fun clampNudgeRangeForHeavyCalls(from: String, to: String, maxDays: Long = 92L): Pair<String, String> {
+        val toDate = LocalDate.parse(to)
+        val fromDate = LocalDate.parse(from)
+        val days = java.time.temporal.ChronoUnit.DAYS.between(fromDate, toDate) + 1
+        return if (days <= maxDays) Pair(from, to)
+        else (toDate.minusDays(maxDays - 1).toString() to to)
+    }
+
     fun setNudgeDateRange(fromDate: String, toDate: String) {
         _uiState.update { it.copy(nudgeFromDate = fromDate, nudgeToDate = toDate) }
     }
@@ -121,9 +130,10 @@ class MoneyMomentsViewModel : ViewModel() {
                     nudgesError = nudgesResult.exceptionOrNull()?.message
                 )
             }
+            val (clampedFrom, clampedTo) = clampNudgeRangeForHeavyCalls(from, to)
             if (loadedNudges.isEmpty()) {
                 val diagnoseResult = withContext(Dispatchers.IO) {
-                    BackendApi.getNudgeDiagnose(token, fromDate = from, toDate = to)
+                    BackendApi.getNudgeDiagnose(token, fromDate = clampedFrom, toDate = clampedTo)
                 }
                 diagnoseResult.getOrNull()?.let { d ->
                     val hint = when (d.suggestion) {
@@ -144,10 +154,10 @@ class MoneyMomentsViewModel : ViewModel() {
                     _uiState.update { it.copy(isEvaluating = true, actionError = null, actionMessage = null) }
                     try {
                         withContext(Dispatchers.IO) {
-                            BackendApi.computeSignal(token, fromDate = from, toDate = to)
+                            BackendApi.computeSignal(token, fromDate = clampedFrom, toDate = clampedTo)
                         }
                         withContext(Dispatchers.IO) {
-                            BackendApi.evaluateNudges(token, fromDate = from, toDate = to)
+                            BackendApi.evaluateNudges(token, fromDate = clampedFrom, toDate = clampedTo)
                         }
                         _uiState.update { it.copy(isEvaluating = false, isComputing = true) }
                         withContext(Dispatchers.IO) { BackendApi.processNudges(token, 10) }
@@ -210,15 +220,16 @@ class MoneyMomentsViewModel : ViewModel() {
             }
             val from = nudgeRangeFrom(_uiState.value)
             val to = nudgeRangeTo(_uiState.value)
+            val (clampedFrom, clampedTo) = clampNudgeRangeForHeavyCalls(from, to)
             _uiState.update {
                 it.copy(isEvaluating = true, actionError = null, actionMessage = null)
             }
             try {
                 withContext(Dispatchers.IO) {
-                    BackendApi.computeSignal(token, fromDate = from, toDate = to)
+                    BackendApi.computeSignal(token, fromDate = clampedFrom, toDate = clampedTo)
                 }
                 val evalResult = withContext(Dispatchers.IO) {
-                    BackendApi.evaluateNudges(token, fromDate = from, toDate = to)
+                    BackendApi.evaluateNudges(token, fromDate = clampedFrom, toDate = clampedTo)
                 }
                 _uiState.update { it.copy(isEvaluating = false) }
                 _uiState.update { it.copy(isComputing = true) }

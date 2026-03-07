@@ -32,7 +32,7 @@ object BackendApi {
 
     private val client = HttpClient(Android) {
         install(HttpTimeout) {
-            requestTimeoutMillis = 60_000  // 60s for mobile networks (slower than WiFi)
+            requestTimeoutMillis = 120_000  // 2 min for signal compute / nudge evaluate over date range
         }
         install(ContentNegotiation) {
             json(Json {

@@ -14,6 +14,13 @@ from .nudge_engine import NudgeEngine
 logger = logging.getLogger(__name__)
 
 
+def _ensure_uuid(value: UUID | str | Any) -> UUID:
+    """Coerce asyncpg UUID or str to uuid.UUID (asyncpg returns pgproto.UUID)."""
+    if isinstance(value, UUID):
+        return value
+    return UUID(str(value))
+
+
 class MoneyMomentsService:
     """Service for MoneyMoments operations."""
 
@@ -70,7 +77,7 @@ class MoneyMomentsService:
                         # Render template on-the-fly
                         try:
                             signal = await engine._get_user_signal(
-                                UUID(nudge["user_id"]),
+                                _ensure_uuid(nudge["user_id"]),
                                 date.today()
                             )
                             template = {
@@ -80,7 +87,7 @@ class MoneyMomentsService:
                                 "cta_deeplink": nudge.get("cta_deeplink"),
                             }
                             rendered = await engine.render_template(
-                                template, UUID(nudge["user_id"]), signal
+                                template, _ensure_uuid(nudge["user_id"]), signal
                             )
                             nudge["title"] = rendered["title"]
                             nudge["body"] = rendered["body"]
@@ -218,8 +225,8 @@ class MoneyMomentsService:
             delivered = []
 
             for candidate in candidates:
-                cand_user_id = UUID(candidate["user_id"])
-                candidate_id = UUID(candidate["candidate_id"])
+                cand_user_id = _ensure_uuid(candidate["user_id"])
+                candidate_id = _ensure_uuid(candidate["candidate_id"])
 
                 # Check suppression
                 suppression = await repo.get_user_suppression(cand_user_id, "in_app")
