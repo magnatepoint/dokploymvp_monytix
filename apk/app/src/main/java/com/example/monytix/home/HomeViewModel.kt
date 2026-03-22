@@ -58,12 +58,33 @@ data class AiInsight(
 data class HealthState(
     val score: Int,
     val trend: String,
-    val subtext: String
+    val subtext: String,
+    val riskLevel: String? = null,
+    val explanation: String? = null,
+    val suggestedImprovement: String? = null
 )
 
 data class RiskState(
     val label: String,
-    val reason: String
+    val reason: String,
+    val shortfallAmount: Double? = null,
+    val daysUntilShortfall: Int? = null,
+    val ctaLabel: String? = null
+)
+
+/** Teaser for Financial Forecast strip. */
+data class ForecastTeaser(
+    val title: String,
+    val message: String,
+    val ctaLabel: String
+)
+
+/** Plan view for primary goal. */
+data class GoalPlan(
+    val goalName: String,
+    val remaining: Double,
+    val delayedByMonths: Int? = null,
+    val recommendedMonthly: Double? = null
 )
 
 data class NextAction(
@@ -237,11 +258,13 @@ class HomeViewModel : ViewModel() {
                     "You're on track to reach your ${g.name.lowercase()} goal soon.", "goal_progress", 0.9f))
             }
         }
-        val foodCat = insights?.category_breakdown?.find { it.category_name.contains("Food", ignoreCase = true) || it.category_name.contains("Dining", ignoreCase = true) }
+        val foodCat = insights?.category_breakdown?.find { it.category_name.contains("Food", ignoreCase = true) || it.category_name.contains("Dining", ignoreCase = true) || it.category_name.contains("Nightlife", ignoreCase = true) }
         if (foodCat != null && foodCat.percentage > 25) {
-            list.add(AiInsight("3", "🟡 Budget Tip",
-                "You're spending ${foodCat.percentage.toInt()}% on ${foodCat.category_name.lowercase()}. Meal planning could save ₹${(foodCat.amount * 0.15).toInt()}.",
-                "budget_tip", 0.8f))
+            val saveMonthly = (foodCat.amount * 0.2).toInt()
+            val saveYearly = saveMonthly * 12
+            list.add(AiInsight("3", "Dining Spending Pattern",
+                "${foodCat.percentage.toInt()}% of discretionary spending is on Food & Nightlife. If reduced by 20% you could save: ₹$saveMonthly/month · ₹$saveYearly/year",
+                "savings_opportunity", 0.8f))
         }
         if ((kpis.assets_amount ?: 0.0) > 1000000) {
             list.add(AiInsight("4", "🟢 Optimization",
@@ -314,7 +337,6 @@ class HomeViewModel : ViewModel() {
         if (hasNoTransactionData()) return HealthState(0, "neutral", "Add data to see your score")
         val income = _uiState.value.kpis?.income_amount ?: 0.0
         val expenses = _uiState.value.kpis?.total_debits_amount ?: 0.0
-        val goals = transformGoals()
         val surplus = income - expenses
         var score = 50
         if (income > 0) {
@@ -328,16 +350,75 @@ class HomeViewModel : ViewModel() {
             surplus < 0 || atRisk > 0 -> "down"
             else -> "neutral"
         }
-        return HealthState(score, trend, "Based on cash, goals, and spending")
+        val riskLevel = when {
+            score < 40 -> "High risk"
+            score < 60 -> "Moderate risk"
+            score < 80 -> "Low risk"
+            else -> "On track"
+        }
+        val (explanation, suggestedImprovement) = when {
+            surplus < 0 && income > 0 -> {
+                val shortfall = kotlin.math.abs(surplus)
+                val reduceBy = (shortfall * 0.6).toInt()
+                val potentialScore = (score + 15).coerceAtMost(100)
+                "Your spending currently exceeds income." to "Reducing discretionary spending by ₹${java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(reduceBy)}/month could improve your score to $potentialScore."
+            }
+            atRisk > 0 -> "Some goals are behind target." to "Adding a small amount to your top goal can improve your score."
+            else -> null to null
+        }
+        return HealthState(score, trend, "Based on cash, goals, and spending", riskLevel, explanation, suggestedImprovement)
     }
 
     /** Current risk for first-fold card. */
     fun riskState(): RiskState {
-        if (hasNoTransactionData()) return RiskState("Add your data", "Upload a statement to see risk and opportunities.")
-        if (!isCashFlowPositive()) return RiskState("Spending ahead of income", "This month's outgo exceeds income. Review expenses.")
+        if (hasNoTransactionData()) return RiskState("Add your data", "Upload a statement to see risk and opportunities.", null, null, null)
+        if (!isCashFlowPositive()) {
+            val income = _uiState.value.kpis?.income_amount ?: 0.0
+            val expenses = _uiState.value.kpis?.total_debits_amount ?: 0.0
+            val shortfall = expenses - income
+            val cal = java.util.Calendar.getInstance()
+            val daysInMonth = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH).toDouble()
+            val dailyDeficit = shortfall / daysInMonth
+            val balance = totalNetWorth()
+            val daysUntil = if (dailyDeficit > 0 && balance > 0) kotlin.math.max(1, kotlin.math.ceil(balance / dailyDeficit).toInt()) else null
+            val shortfallFmt = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(shortfall.toLong())
+            val reason = "Spending exceeds income by ₹$shortfallFmt this month." + if (daysUntil != null && daysUntil in 1..90) " Projected shortfall in $daysUntil days." else " Review expenses."
+            return RiskState("Cash Flow Risk", reason, shortfall, daysUntil, "View forecast →")
+        }
         val atRisk = goalsAtRiskCount()
-        if (atRisk > 0) return RiskState("$atRisk goal${if (atRisk > 1) "s" else ""} at risk", "Consider topping up to stay on track.")
-        return RiskState("You're on track", "Cash flow is positive and goals are in good shape.")
+        if (atRisk > 0) return RiskState("$atRisk goal${if (atRisk > 1) "s" else ""} at risk", "Consider topping up to stay on track.", null, null, "View goals →")
+        return RiskState("You're on track", "Cash flow is positive and goals are in good shape.", null, null, null)
+    }
+
+    fun forecastTeaser(): ForecastTeaser {
+        if (hasNoTransactionData()) return ForecastTeaser("Financial Forecast", "Upload data to see your projected balance.", "View financial future →")
+        val balance = totalNetWorth()
+        val income = _uiState.value.kpis?.income_amount ?: 0.0
+        val expenses = _uiState.value.kpis?.total_debits_amount ?: 0.0
+        val surplus = income - expenses
+        val cal = java.util.Calendar.getInstance()
+        val daysInMonth = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH).toDouble()
+        val dailyDeficit = if (surplus < 0) kotlin.math.abs(surplus) / daysInMonth else 0.0
+        if (surplus < 0 && dailyDeficit > 0 && balance > 10_000) {
+            val threshold = 10_000.0
+            val daysUntilLow = kotlin.math.max(1, kotlin.math.ceil((balance - threshold) / dailyDeficit).toInt())
+            return ForecastTeaser("Financial Forecast", "Your balance may drop below ₹10,000 in $daysUntilLow days.", "View financial future →")
+        }
+        return ForecastTeaser("Financial Forecast", "See how your balance and cash flow look over the next 30 days.", "View financial future →")
+    }
+
+    fun primaryGoalPlan(): GoalPlan? {
+        val goals = transformGoals()
+        val g = goals.firstOrNull() ?: return null
+        if (g.targetAmount <= 0) return null
+        val remaining = (g.targetAmount - g.savedAmount).coerceAtLeast(0.0)
+        val progressItem = _uiState.value.goalsProgress.find { it.goal_id == g.id }
+        val monthlyRequired = progressItem?.monthly_required ?: (remaining / 12)
+        val currentMonthly = progressItem?.monthly_avg_contribution ?: 0.0
+        val delayedBy = if (currentMonthly > 0 && monthlyRequired != null && monthlyRequired > currentMonthly && monthlyRequired > 0)
+            kotlin.math.max(0, kotlin.math.ceil(remaining / currentMonthly - remaining / monthlyRequired).toInt())
+        else null
+        return GoalPlan(g.name, remaining, delayedBy, if (monthlyRequired != null && monthlyRequired > 0) monthlyRequired else null)
     }
 
     /** Next best action for CTA card. */
@@ -346,8 +427,8 @@ class HomeViewModel : ViewModel() {
         val insights = generateAiInsights()
         if (insights.size >= 2) return NextAction("insights", "Review ${insights.size} insights", null)
         val goals = transformGoals()
-        if (goals.any { g -> g.targetAmount > 0 && (g.savedAmount / g.targetAmount) < 0.5 }) return NextAction("goal", "Top up a goal", null)
-        return NextAction("forecast", "See your financial future", null)
+        if (goals.any { g -> g.targetAmount > 0 && (g.savedAmount / g.targetAmount) < 0.5 }) return NextAction("goal", "Boost your goal progress", null)
+        return NextAction("forecast", "View financial future", null)
     }
 
     fun checkBackend() {
@@ -370,5 +451,9 @@ class HomeViewModel : ViewModel() {
         AnalyticsHelper.logEvent("refresh")
         loadDashboard()
         checkBackend()
+    }
+
+    fun clearBackendError() {
+        _uiState.update { it.copy(backendError = null) }
     }
 }

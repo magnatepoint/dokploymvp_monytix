@@ -1097,7 +1097,8 @@ enum BackendApi {
     }
 
     static func getTopInsights(accessToken: String, limit: Int = 5) async -> Result<TopInsightsResponse, BackendApiError> {
-        return await runWithFallback("/v1/spendsense/insights/top?limit=\(limit)", accessToken: accessToken) { data in
+        let safeLimit = min(max(limit, 1), 50) // matches backend GET /insights/top le=50
+        return await runWithFallback("/v1/spendsense/insights/top?limit=\(safeLimit)", accessToken: accessToken) { data in
             try decoder.decode(TopInsightsResponse.self, from: data)
         }
     }

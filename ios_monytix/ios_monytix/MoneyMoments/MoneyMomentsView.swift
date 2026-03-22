@@ -24,14 +24,18 @@ enum MoneyMomentsTab: String, CaseIterable {
 struct MoneyMomentsView: View {
     @StateObject private var viewModel = MoneyMomentsViewModel()
     @State private var selectedTab: MoneyMomentsTab = .nudges
+    /// When set, only this tab is shown (no banner, no tab bar). Used by ForesightView.
+    var embedTab: MoneyMomentsTab? = nil
 
     var body: some View {
         NavigationStack {
             ZStack {
                 MonytixTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
-                    welcomeBanner
-                    tabBar
+                    if embedTab == nil {
+                        welcomeBanner
+                        tabBar
+                    }
                     tabContent
                 }
             }
@@ -108,7 +112,7 @@ struct MoneyMomentsView: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        switch selectedTab {
+        switch embedTab ?? selectedTab {
         case .nudges:
             NudgesTabContent(viewModel: viewModel)
         case .habits:

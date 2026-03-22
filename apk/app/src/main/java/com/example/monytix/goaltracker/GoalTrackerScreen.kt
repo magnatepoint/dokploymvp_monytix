@@ -242,7 +242,7 @@ fun GoalTrackerScreen(
                     progress = prog,
                     viewModel = viewModel,
                     onDismiss = { selectedGoal = null },
-                    onNavigateToBudget = { onNavigateTo(com.example.monytix.AppDestinations.BUDGET) }
+                    onNavigateToBudget = { onNavigateTo(com.example.monytix.AppDestinations.STATE) }
                 )
             }
         }

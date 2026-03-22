@@ -16,6 +16,11 @@ struct FutureView: View {
         Group {
             if viewModel.isLoading && !viewModel.hasData {
                 futureSkeleton
+            } else if let err = viewModel.errorMessage, !viewModel.hasData {
+                ZStack {
+                    MonytixTheme.bg.ignoresSafeArea()
+                    futureErrorState(message: err, onRetry: { viewModel.refresh() })
+                }
             } else if !viewModel.hasData {
                 ZStack {
                     MonytixTheme.bg.ignoresSafeArea()
@@ -24,9 +29,7 @@ struct FutureView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: MonytixSpace.md) {
-                        Text("Financial Future")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(MonytixTheme.text1)
+                        futureHero(message: viewModel.heroMessage, isRisk: viewModel.heroIsRisk)
                         Text(viewModel.confidenceLabel)
                             .font(.system(size: 13))
                             .foregroundStyle(MonytixTheme.text2)
@@ -57,6 +60,9 @@ struct FutureView: View {
     private var futureSkeleton: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: MonytixSpace.md) {
+                Text("Building your forecast…")
+                    .font(.system(size: 14))
+                    .foregroundStyle(MonytixTheme.text2)
                 RoundedRectangle(cornerRadius: 6)
                     .fill(MonytixTheme.stroke.opacity(0.4))
                     .frame(width: 180, height: 24)
@@ -94,24 +100,58 @@ struct FutureView: View {
         .padding(MonytixSpace.xl)
     }
 
+    private func futureErrorState(message: String, onRetry: @escaping () -> Void) -> some View {
+        VStack(spacing: MonytixSpace.lg) {
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundStyle(MonytixTheme.text2)
+                .multilineTextAlignment(.center)
+            Button("Retry", action: onRetry)
+                .buttonStyle(.borderedProminent)
+                .tint(MonytixTheme.cyan1)
+        }
+        .padding(MonytixSpace.xl)
+    }
+
+    private func futureHero(message: String, isRisk: Bool) -> some View {
+        let color = isRisk ? MonytixTheme.warn : MonytixTheme.cyan1
+        return Text(message)
+            .font(.system(size: 20, weight: .bold))
+            .foregroundStyle(color)
+    }
+
     private var forecastChartPlaceholder: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForecastLineChartView(points: viewModel.projectionPoints)
-                .frame(height: 160)
+            ForecastLineChartView(points: viewModel.projectionPoints, lowPointIndex: viewModel.lowPointDayIndex)
+                .frame(height: 180)
                 .background(MonytixTheme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: MonytixShape.smallRadius))
+            HStack {
+                Text("Today")
+                    .font(.caption)
+                    .foregroundStyle(MonytixTheme.text2)
+                Spacer()
+                Text("Day 15")
+                    .font(.caption)
+                    .foregroundStyle(MonytixTheme.text2)
+                Spacer()
+                Text("Day 30")
+                    .font(.caption)
+                    .foregroundStyle(MonytixTheme.text2)
+            }
         }
     }
 
     private func riskStripCard(label: String, severity: String) -> some View {
         let tint: Color = severity == "warning" ? MonytixTheme.warn : (severity == "danger" ? MonytixTheme.danger : MonytixTheme.success)
-        return Text(label)
-            .font(.system(size: 13, weight: .medium))
+        let displayLabel = label.hasPrefix("⚠") ? label : "⚠ \(label)"
+        return Text(displayLabel)
+            .font(.system(size: 14, weight: .medium))
             .foregroundStyle(tint)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(MonytixSpace.sm)
+            .padding(MonytixSpace.md)
             .background(tint.opacity(0.15))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: MonytixShape.smallRadius))
     }
 
     private func savingsCard(_ text: String) -> some View {
@@ -144,6 +184,7 @@ struct FutureView: View {
 
 private struct ForecastLineChartView: View {
     let points: [(CGFloat, CGFloat)]
+    var lowPointIndex: Int? = nil
     @State private var drawProgress: CGFloat = 0
 
     var body: some View {
@@ -158,6 +199,24 @@ private struct ForecastLineChartView: View {
                 let linePath = linePath(padding: padding, chartW: chartW, chartH: chartH, xStep: xStep)
                 let fillPath = fillPath(padding: padding, chartW: chartW, chartH: chartH, xStep: xStep)
                 ZStack(alignment: .topLeading) {
+                    // Today marker (vertical line at x=0)
+                    Rectangle()
+                        .fill(MonytixTheme.text2.opacity(0.5))
+                        .frame(width: 1, height: chartH)
+                        .offset(x: padding - 0.5, y: padding)
+                    // Low point marker (dot + optional label)
+                    if let lowIdx = lowPointIndex, lowIdx >= 0, lowIdx < points.count {
+                        let lowX = padding + CGFloat(lowIdx) * xStep
+                        let lowY = padding + (1 - points[lowIdx].1) * chartH
+                        Circle()
+                            .fill(MonytixTheme.warn)
+                            .frame(width: 10, height: 10)
+                            .position(x: lowX, y: lowY)
+                        Text("Low")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(MonytixTheme.warn)
+                            .position(x: lowX, y: lowY - 12)
+                    }
                     // Fill under line (masked by drawProgress for reveal)
                     fillPath
                         .fill(MonytixTheme.cyan1.opacity(0.2))

@@ -55,6 +55,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -94,6 +95,8 @@ import com.example.monytix.ui.theme.BackgroundGradientBottom
 import com.example.monytix.ui.theme.BackgroundGradientTop
 import com.example.monytix.ui.theme.GlassCard
 import com.example.monytix.ui.theme.SurfaceElevated
+import com.example.monytix.ui.theme.MonytixSpacing
+import com.example.monytix.ui.theme.MonytixRadius
 import com.example.monytix.assistant.AssistantSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -188,6 +191,13 @@ fun HomeScreen(
                     )
             ) {
             WelcomeBanner(username = uiState.userEmail ?: "User")
+            uiState.backendError?.let { err ->
+                HomeErrorBanner(
+                    message = err,
+                    onDismiss = { viewModel.clearBackendError() },
+                    onRetry = { viewModel.refresh() }
+                )
+            }
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading,
                 onRefresh = { viewModel.refresh() }
@@ -244,6 +254,13 @@ private fun CommandCenterSkeleton() {
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item {
+            Text(
+                text = stringResource(R.string.loading_command_center),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         repeat(3) {
             item {
                 Card(
@@ -315,6 +332,45 @@ private fun CommandCenterSkeleton() {
 }
 
 @Composable
+private fun HomeErrorBanner(
+    message: String,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Surface(
+        color = com.example.monytix.ui.theme.ErrorRed.copy(alpha = 0.15f),
+        shape = RoundedCornerShape(MonytixRadius.compact),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = MonytixSpacing.cardPaddingCompact, vertical = MonytixSpacing.betweenCardsTight)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(MonytixSpacing.cardPaddingCompact),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onRetry) {
+                    Text("Retry", color = AccentPrimary)
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun WelcomeBanner(username: String) {
     val displayName = username.split("@").firstOrNull()?.takeIf { it.isNotBlank() } ?: "User"
     val colorScheme = MaterialTheme.colorScheme
@@ -367,19 +423,47 @@ private fun CommandCenterContent(
     val next = viewModel.nextAction()
     val goals = viewModel.transformGoals()
     val topInsights = viewModel.topInsightsForCommandCenter()
+    val forecastTeaser = viewModel.forecastTeaser()
+    val primaryPlan = viewModel.primaryGoalPlan()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(horizontal = MonytixSpacing.cardPaddingCompact, vertical = MonytixSpacing.betweenCards),
+        verticalArrangement = Arrangement.spacedBy(MonytixSpacing.betweenCards)
     ) {
         item {
-            CommandCenterEnter(delayMillis = 0) { HealthCard(health = health) }
+            CommandCenterEnter(delayMillis = 0) {
+                RiskCard(
+                    risk = risk,
+                    onCta = {
+                        if (risk.ctaLabel?.contains("forecast") == true) onNavigateTo(AppDestinations.FORESIGHT)
+                        else onNavigateTo(AppDestinations.STATE)
+                    }
+                )
+            }
         }
         item {
-            CommandCenterEnter(delayMillis = 50) { RiskCard(risk = risk) }
+            CommandCenterEnter(delayMillis = 50) { HealthCard(health = health) }
         }
         item {
             CommandCenterEnter(delayMillis = 100) {
+                ForecastStrip(teaser = forecastTeaser, onSeeFuture = { onNavigateTo(AppDestinations.FORESIGHT) })
+            }
+        }
+        if (primaryPlan != null) {
+            item {
+                CommandCenterEnter(delayMillis = 120) {
+                    GoalProgressCard(plan = primaryPlan, onSeeAll = { onNavigateTo(AppDestinations.STATE) })
+                }
+            }
+        } else if (goals.isNotEmpty()) {
+            item {
+                CommandCenterEnter(delayMillis = 120) {
+                    GoalPulseRow(goals = goals, onSeeAll = { onNavigateTo(AppDestinations.STATE) })
+                }
+            }
+        }
+        item {
+            CommandCenterEnter(delayMillis = 140) {
                 CtaCard(
                     nextAction = next,
                     onUpload = onLaunchFilePicker,
@@ -388,24 +472,9 @@ private fun CommandCenterContent(
                 )
             }
         }
-        if (goals.isNotEmpty()) {
-            item {
-                CommandCenterEnter(delayMillis = 150) {
-                    GoalPulseRow(
-                        goals = goals,
-                        onSeeAll = { onNavigateTo(AppDestinations.GOALS) }
-                    )
-                }
-            }
-        }
-        item {
-            CommandCenterEnter(delayMillis = 200) {
-                ForecastStrip(onSeeFuture = { onNavigateTo(AppDestinations.FUTURE) })
-            }
-        }
         if (topInsights.isNotEmpty()) {
             item {
-                CommandCenterEnter(delayMillis = 220) {
+                CommandCenterEnter(delayMillis = 160) {
                     Text(
                         text = "Insights",
                         style = MaterialTheme.typography.titleMedium,
@@ -415,12 +484,11 @@ private fun CommandCenterContent(
                 }
             }
             items(topInsights) { insight ->
-                CommandCenterEnter(delayMillis = 250) {
+                CommandCenterEnter(delayMillis = 180) {
                     InsightCardCompact(
-                        title = insight.title,
-                        message = insight.message,
+                        insight = insight,
                         onClick = {
-                            onNavigateTo(AppDestinations.DATA)
+                            onNavigateTo(AppDestinations.MEMORY)
                             onShowSnackbar(insight.message)
                         }
                     )
@@ -429,7 +497,7 @@ private fun CommandCenterContent(
         }
         if (uiState.recentTransactions.isNotEmpty()) {
             item {
-                CommandCenterEnter(delayMillis = 320) {
+                CommandCenterEnter(delayMillis = 240) {
                     Text(
                         text = "Recent Transactions",
                         style = MaterialTheme.typography.titleMedium,
@@ -439,11 +507,11 @@ private fun CommandCenterContent(
                 }
             }
             items(uiState.recentTransactions.take(5), key = { it.txn_id }) { txn ->
-                CommandCenterEnter(delayMillis = 350) {
+                CommandCenterEnter(delayMillis = 260) {
                     RecentTransactionRow(
                         transaction = txn,
                         onClick = {
-                            onNavigateTo(AppDestinations.DATA)
+                            onNavigateTo(AppDestinations.MEMORY)
                             onShowSnackbar("View all in SpendSense.")
                         }
                     )
@@ -473,13 +541,13 @@ private fun CommandCenterEnter(
 private fun HealthCard(health: HealthState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(MonytixRadius.secondary),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(MonytixSpacing.cardPaddingSecondary)) {
             Text(
-                text = "Financial health",
+                text = "Financial Health",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -489,7 +557,7 @@ private fun HealthCard(health: HealthState) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "${health.score}",
+                    text = "${health.score} / 100",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = AccentPrimary
@@ -504,27 +572,52 @@ private fun HealthCard(health: HealthState) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            health.riskLevel?.let { level ->
+                Text(
+                    text = "⚠ $level",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = com.example.monytix.ui.theme.Warning
+                )
+            }
             Text(
                 text = health.subtext,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            health.explanation?.let { exp ->
+                Text(
+                    text = exp,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            health.suggestedImprovement?.let { sug ->
+                Text(
+                    text = sug,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = AccentPrimary
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun RiskCard(risk: RiskState) {
+private fun RiskCard(risk: RiskState, onCta: (() -> Unit)? = null) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+        shape = RoundedCornerShape(MonytixRadius.primary),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, com.example.monytix.ui.theme.Warning.copy(alpha = 0.4f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(MonytixSpacing.cardPaddingPrimary)) {
             Text(
-                text = risk.label,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
+                text = "⚠ ${risk.label}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
@@ -532,6 +625,11 @@ private fun RiskCard(risk: RiskState) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            risk.ctaLabel?.takeIf { it.isNotBlank() }?.let { cta ->
+                TextButton(onClick = { onCta?.invoke() }) {
+                    Text(cta, color = AccentPrimary, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                }
+            }
         }
     }
 }
@@ -545,11 +643,11 @@ private fun CtaCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(MonytixRadius.secondary),
         colors = CardDefaults.cardColors(containerColor = AccentPrimary.copy(alpha = 0.15f)),
         border = BorderStroke(1.dp, AccentPrimary.copy(alpha = 0.4f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(MonytixSpacing.cardPaddingCompact)) {
             Text(
                 text = nextAction.label,
                 style = MaterialTheme.typography.titleSmall,
@@ -561,9 +659,9 @@ private fun CtaCard(
                 onClick = {
                     when (nextAction.type) {
                         "upload" -> onUpload()
-                        "insights" -> onNavigateTo(AppDestinations.DATA)
-                        "goal" -> onNavigateTo(AppDestinations.GOALS)
-                        "forecast" -> onNavigateTo(AppDestinations.FUTURE)
+                        "insights" -> onNavigateTo(AppDestinations.MEMORY)
+                        "goal" -> onNavigateTo(AppDestinations.STATE)
+                        "forecast" -> onNavigateTo(AppDestinations.FORESIGHT)
                         else -> onUpload()
                     }
                 },
@@ -574,7 +672,7 @@ private fun CtaCard(
                         "upload" -> "Upload statement"
                         "insights" -> "Review insights"
                         "goal" -> "View goals"
-                        "forecast" -> "See forecast"
+                        "forecast" -> "View financial future →"
                         else -> nextAction.label
                     }
                 )
@@ -592,13 +690,13 @@ private fun GoalPulseRow(
     val fmt = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US)
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onSeeAll),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(MonytixRadius.compact),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(MonytixSpacing.cardPaddingCompact),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -617,27 +715,33 @@ private fun GoalPulseRow(
 }
 
 @Composable
-private fun ForecastStrip(onSeeFuture: () -> Unit) {
+private fun ForecastStrip(teaser: ForecastTeaser, onSeeFuture: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onSeeFuture),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(MonytixRadius.secondary),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(MonytixSpacing.cardPaddingSecondary),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(
-                text = "Next 30 days",
+                text = teaser.title,
                 style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "See forecast →",
+                text = teaser.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = teaser.ctaLabel,
                 style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
                 color = AccentPrimary
             )
         }
@@ -645,28 +749,91 @@ private fun ForecastStrip(onSeeFuture: () -> Unit) {
 }
 
 @Composable
-private fun InsightCardCompact(
-    title: String,
-    message: String,
-    onClick: () -> Unit
-) {
+private fun GoalProgressCard(plan: GoalPlan, onSeeAll: () -> Unit) {
+    val fmt = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US)
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onSeeAll),
+        shape = RoundedCornerShape(MonytixRadius.compact),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(MonytixSpacing.cardPaddingCompact),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Text(
-                text = title,
+                text = "Goal Progress",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = plan.goalName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "₹${fmt.format(plan.remaining.toLong())} remaining",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            plan.delayedByMonths?.takeIf { it > 0 }?.let { months ->
+                Text(
+                    text = "At current pace: Target delayed by $months month${if (months == 1) "" else "s"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = com.example.monytix.ui.theme.Warning
+                )
+            }
+            plan.recommendedMonthly?.takeIf { it > 0 }?.let { rec ->
+                Text(
+                    text = "Recommended monthly saving: ₹${fmt.format(rec.toLong())}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = AccentPrimary
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    text = "See all",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = AccentPrimary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InsightCardCompact(
+    insight: AiInsight,
+    onClick: () -> Unit
+) {
+    val displayTitle = when (insight.type) {
+        "budget_tip", "savings_opportunity" -> "Savings Opportunity"
+        else -> if (insight.title.startsWith("⚠")) insight.title else "⚠ ${insight.title}"
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(MonytixRadius.compact),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(MonytixSpacing.cardPaddingCompact)) {
+            Text(
+                text = displayTitle,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = AccentPrimary
             )
             Text(
-                text = message,
+                text = insight.message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2
+                maxLines = 4
             )
         }
     }
@@ -754,7 +921,7 @@ private fun OverviewTab(
             onDismiss = { showNetWorthDialog = false },
             onViewAccounts = {
                 showNetWorthDialog = false
-                onNavigateTo(AppDestinations.DATA)
+                onNavigateTo(AppDestinations.MEMORY)
             }
         )
     }
@@ -777,7 +944,7 @@ private fun OverviewTab(
                     onInfoClick = { showNetWorthDialog = true },
                     onClick = {
                         AnalyticsHelper.logEvent("net_worth_tapped")
-                        onNavigateTo(AppDestinations.DATA)
+                        onNavigateTo(AppDestinations.MEMORY)
                         onShowSnackbar("Net worth = assets minus liabilities. View in SpendSense.")
                     }
                 )
@@ -796,13 +963,13 @@ private fun OverviewTab(
                             val hasRisk = todayItems.any { it.type == "risk" }
                             val hasSpike = todayItems.any { it.type == "spike" }
                             if (hasRisk) {
-                                onNavigateTo(AppDestinations.GOALS)
+                                onNavigateTo(AppDestinations.STATE)
                                 onShowSnackbar("View details in GoalTracker.")
                             } else if (hasSpike) {
-                                onNavigateTo(AppDestinations.DATA)
+                                onNavigateTo(AppDestinations.MEMORY)
                                 onShowSnackbar("View spending in SpendSense.")
                             } else {
-                                onNavigateTo(AppDestinations.DATA)
+                                onNavigateTo(AppDestinations.MEMORY)
                                 onShowSnackbar("View details in SpendSense.")
                             }
                         }
@@ -820,7 +987,7 @@ private fun OverviewTab(
                     label = if (viewModel.isCashFlowPositive()) "Cash Flow Positive" else "Cash Flow Negative",
                     isPositive = viewModel.isCashFlowPositive(),
                     onClick = {
-                        onNavigateTo(AppDestinations.DATA)
+                        onNavigateTo(AppDestinations.MEMORY)
                         onShowSnackbar("Cash flow = income minus expenses. View in SpendSense.")
                     }
                 )
@@ -830,7 +997,7 @@ private fun OverviewTab(
                         label = "$atRisk Goals At Risk",
                         isPositive = false,
                         onClick = {
-                            onNavigateTo(AppDestinations.GOALS)
+                            onNavigateTo(AppDestinations.STATE)
                             onShowSnackbar("$atRisk goals need attention. View in GoalTracker.")
                         }
                     )
@@ -841,7 +1008,7 @@ private fun OverviewTab(
                         label = "$spikes Spending Spike${if (spikes > 1) "s" else ""}",
                         isPositive = false,
                         onClick = {
-                            onNavigateTo(AppDestinations.DATA)
+                            onNavigateTo(AppDestinations.MEMORY)
                             onShowSnackbar("Unusual spending detected. View in SpendSense.")
                         }
                     )
@@ -856,7 +1023,7 @@ private fun OverviewTab(
                     value = formatCurrency(thisMonthSpending),
                     color = com.example.monytix.ui.theme.ChartRed,
                     onClick = {
-                        onNavigateTo(AppDestinations.DATA)
+                        onNavigateTo(AppDestinations.MEMORY)
                         onShowSnackbar("Monthly spending by category. View in SpendSense.")
                     }
                 )
@@ -864,7 +1031,7 @@ private fun OverviewTab(
                     modifier = Modifier.weight(1f),
                     savingsRate = savingsRate,
                     onClick = {
-                        onNavigateTo(AppDestinations.FAVORITES)
+                        onNavigateTo(AppDestinations.FORESIGHT)
                         onShowSnackbar("Savings rate = (income - expenses) / income. View AI insights.")
                     }
                 )
@@ -874,7 +1041,7 @@ private fun OverviewTab(
                     value = goals.size.toString(),
                     color = MaterialTheme.colorScheme.primary,
                     onClick = {
-                        onNavigateTo(AppDestinations.GOALS)
+                        onNavigateTo(AppDestinations.STATE)
                         onShowSnackbar("Track progress and adjust goals in GoalTracker.")
                     }
                 )
@@ -890,7 +1057,7 @@ private fun OverviewTab(
                     transaction = txn,
                     onClick = {
                         AnalyticsHelper.logEvent("transaction_tapped", mapOf("txn_id" to txn.txn_id))
-                        onNavigateTo(AppDestinations.DATA)
+                        onNavigateTo(AppDestinations.MEMORY)
                         onShowSnackbar("View all transactions in SpendSense.")
                     }
                 )
@@ -906,7 +1073,7 @@ private fun OverviewTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            onNavigateTo(AppDestinations.DATA)
+                            onNavigateTo(AppDestinations.MEMORY)
                             onShowSnackbar("Spending by category. View details in SpendSense.")
                         },
                     colors = CardDefaults.cardColors(containerColor = GlassCard),
@@ -1627,7 +1794,7 @@ private fun GoalsTab(
                     .fillMaxWidth()
                     .clickable {
                         AnalyticsHelper.logEvent("goal_card_tapped", mapOf("goal_id" to goal.id))
-                        onNavigateTo(AppDestinations.GOALS)
+                        onNavigateTo(AppDestinations.STATE)
                     },
                 colors = CardDefaults.cardColors(containerColor = GlassCard),
                 shape = RoundedCornerShape(16.dp),

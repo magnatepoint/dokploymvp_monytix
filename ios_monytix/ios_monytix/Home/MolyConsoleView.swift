@@ -30,6 +30,9 @@ struct MolyConsoleView: View {
 
                 VStack(spacing: 0) {
                     welcomeBanner
+                    if let err = viewModel.backendError {
+                        HomeErrorBanner(message: err, onDismiss: { viewModel.clearBackendError() }, onRetry: { viewModel.refresh() })
+                    }
                     if viewModel.isLoading && viewModel.kpis == nil {
                         commandCenterSkeleton
                     } else {
@@ -195,6 +198,34 @@ struct MolyConsoleView: View {
         }
     }
 
+    private struct HomeErrorBanner: View {
+        let message: String
+        let onDismiss: () -> Void
+        let onRetry: () -> Void
+        var body: some View {
+            HStack(alignment: .center, spacing: MonytixSpace.sm) {
+                Text(message)
+                    .font(.system(size: 13))
+                    .foregroundStyle(MonytixTheme.text1)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Retry", action: onRetry)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(MonytixTheme.cyan1)
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(MonytixTheme.text2)
+                }
+            }
+            .padding(MonytixSpace.md)
+            .background(MonytixTheme.danger.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: MonytixShape.smallRadius))
+            .padding(.horizontal, MonytixSpace.lg)
+            .padding(.vertical, MonytixSpace.sm)
+        }
+    }
+
     private var welcomeBanner: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("AI Financial Command Center")
@@ -221,10 +252,27 @@ struct MolyConsoleView: View {
                     .padding(.top, MonytixSpace.xl)
             } else {
                 LazyVStack(alignment: .leading, spacing: MonytixSpace.md) {
+                    // 1. BIG: Financial Risk (main problem first)
+                    RiskCard(risk: viewModel.riskState(), onCta: {
+                        if viewModel.riskState().ctaLabel?.contains("forecast") == true { onNavigateToFuture() }
+                        else { onNavigateToGoals() }
+                    })
+                    .enter(delay: 0)
+                    // 2. MEDIUM: Financial Health (score + context)
                     HealthCard(health: viewModel.healthState())
-                        .enter(delay: 0)
-                    RiskCard(risk: viewModel.riskState())
                         .enter(delay: 0.05)
+                    // 3. Killer forecast entry
+                    ForecastStrip(teaser: viewModel.forecastTeaser(), onSeeFuture: onNavigateToFuture)
+                        .enter(delay: 0.1)
+                    // 4. MEDIUM: Goal progress with plan
+                    if let plan = viewModel.primaryGoalPlan() {
+                        GoalProgressCard(plan: plan, onSeeAll: onNavigateToGoals)
+                            .enter(delay: 0.12)
+                    } else if !viewModel.transformGoals().isEmpty {
+                        GoalPulseRow(goals: viewModel.transformGoals(), onSeeAll: onNavigateToGoals)
+                            .enter(delay: 0.12)
+                    }
+                    // 5. CTA (goal boost or insights)
                     CtaCard(
                         nextAction: viewModel.nextAction(),
                         onUpload: { showFileImporter = true },
@@ -232,34 +280,28 @@ struct MolyConsoleView: View {
                         onNavigateToGoals: onNavigateToGoals,
                         onNavigateToSpendSense: onNavigateToSpendSense
                     )
-                    .enter(delay: 0.1)
-                    if !viewModel.transformGoals().isEmpty {
-                        GoalPulseRow(goals: viewModel.transformGoals(), onSeeAll: onNavigateToGoals)
-                            .enter(delay: 0.15)
-                    }
-                    ForecastStrip(onSeeFuture: onNavigateToFuture)
-                        .enter(delay: 0.2)
+                    .enter(delay: 0.14)
+                    // 6. SMALL: Insights
                     let topInsights = viewModel.topInsightsForCommandCenter()
                     if !topInsights.isEmpty {
                         Text("Insights")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(MonytixTheme.text1)
-                            .enter(delay: 0.22)
+                            .enter(delay: 0.16)
                         ForEach(Array(topInsights.enumerated()), id: \.element.id) { index, insight in
-                            InsightCardCompact(title: insight.title, message: insight.message) {
-                                onNavigateToSpendSense()
-                            }
-                            .enter(delay: 0.25 + Double(index) * 0.03)
+                            InsightCardCompact(insight: insight) { onNavigateToSpendSense() }
+                                .enter(delay: 0.18 + Double(index) * 0.03)
                         }
                     }
+                    // 7. Recent Transactions
                     if !viewModel.recentTransactions.isEmpty {
                         Text("Recent Transactions")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(MonytixTheme.text1)
-                            .enter(delay: 0.32)
+                            .enter(delay: 0.24)
                         ForEach(Array(viewModel.recentTransactions.prefix(5).enumerated()), id: \.element.txnId) { i, t in
                             recentTxnRowCommandCenter(t)
-                                .enter(delay: 0.35 + Double(i) * 0.02)
+                                .enter(delay: 0.26 + Double(i) * 0.02)
                         }
                     }
                 }
@@ -298,6 +340,9 @@ struct MolyConsoleView: View {
     private var commandCenterSkeleton: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MonytixSpace.md) {
+                Text("Loading your command center…")
+                    .font(.system(size: 14))
+                    .foregroundStyle(MonytixTheme.text2)
                 SkeletonCard()
                 SkeletonCard()
                 SkeletonCard()
@@ -349,12 +394,12 @@ struct MolyConsoleView: View {
 private struct HealthCard: View {
     let health: HealthState
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Financial health")
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Financial Health")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(MonytixTheme.text2)
-            HStack {
-                Text("\(health.score)")
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(health.score) / 100")
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(MonytixTheme.cyan1)
                 Spacer()
@@ -362,9 +407,24 @@ private struct HealthCard: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(MonytixTheme.text2)
             }
+            if let level = health.riskLevel {
+                Text("⚠ \(level)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(MonytixTheme.warn)
+            }
             Text(health.subtext)
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(MonytixTheme.text2)
+            if let explanation = health.explanation {
+                Text(explanation)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(MonytixTheme.text1)
+            }
+            if let suggestion = health.suggestedImprovement {
+                Text(suggestion)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MonytixTheme.cyan1)
+            }
         }
         .padding(MonytixSpace.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -375,19 +435,32 @@ private struct HealthCard: View {
 
 private struct RiskCard: View {
     let risk: RiskState
+    var onCta: (() -> Void)?
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(risk.label)
-                .font(.system(size: 15, weight: .semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            Text("⚠ \(risk.label)")
+                .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(MonytixTheme.text1)
             Text(risk.reason)
-                .font(.system(size: 13, weight: .regular))
+                .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(MonytixTheme.text2)
+            if let cta = risk.ctaLabel, !cta.isEmpty {
+                Button(action: { onCta?() }) {
+                    Text(cta)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(MonytixTheme.cyan1)
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .padding(MonytixSpace.md)
+        .padding(MonytixSpace.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(MonytixTheme.surface2.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(MonytixTheme.surface2.opacity(0.8))
+        .clipShape(RoundedRectangle(cornerRadius: MonytixShape.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: MonytixShape.cardRadius)
+                .stroke(MonytixTheme.warn.opacity(0.4), lineWidth: 1)
+        )
     }
 }
 
@@ -428,7 +501,7 @@ private struct CtaCard: View {
         case "upload": return "Upload statement"
         case "insights": return "Review insights"
         case "goal": return "View goals"
-        case "forecast": return "See forecast"
+        case "forecast": return "View financial future →"
         default: return nextAction.label
         }
     }
@@ -459,41 +532,90 @@ private struct GoalPulseRow: View {
 }
 
 private struct ForecastStrip: View {
+    let teaser: ForecastTeaser
     let onSeeFuture: () -> Void
     var body: some View {
         Button(action: onSeeFuture) {
-            HStack {
-                Text("Next 30 days")
-                    .font(.system(size: 15, weight: .medium))
+            VStack(alignment: .leading, spacing: 6) {
+                Text(teaser.title)
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(MonytixTheme.text1)
-                Spacer()
-                Text("See forecast →")
-                    .font(.system(size: 12, weight: .medium))
+                Text(teaser.message)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(MonytixTheme.text2)
+                Text(teaser.ctaLabel)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(MonytixTheme.cyan1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(MonytixSpace.md)
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
         .background(MonytixTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: MonytixShape.smallRadius))
+    }
+}
+
+private struct GoalProgressCard: View {
+    let plan: GoalPlan
+    let onSeeAll: () -> Void
+    var body: some View {
+        Button(action: onSeeAll) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Goal Progress")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MonytixTheme.text2)
+                Text(plan.goalName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(MonytixTheme.text1)
+                Text("\(formatCurrency(plan.remaining)) remaining")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(MonytixTheme.text2)
+                if let months = plan.delayedByMonths, months > 0 {
+                    Text("At current pace: Target delayed by \(months) month\(months == 1 ? "" : "s")")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(MonytixTheme.warn)
+                }
+                if let rec = plan.recommendedMonthly, rec > 0 {
+                    Text("Recommended monthly saving: \(formatCurrency(rec))")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(MonytixTheme.cyan1)
+                }
+                HStack {
+                    Spacer()
+                    Text("See all")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(MonytixTheme.cyan1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(MonytixSpace.md)
+        }
+        .buttonStyle(.plain)
+        .background(MonytixTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: MonytixShape.smallRadius))
     }
 }
 
 private struct InsightCardCompact: View {
-    let title: String
-    let message: String
+    let insight: AiInsight
     let onClick: () -> Void
+    private var displayTitle: String {
+        if insight.type == "budget_tip" || insight.type == "savings_opportunity" {
+            return "Savings Opportunity"
+        }
+        return insight.title.hasPrefix("⚠") ? insight.title : "⚠ \(insight.title)"
+    }
     var body: some View {
         Button(action: onClick) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
+                Text(displayTitle)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(MonytixTheme.cyan1)
-                Text(message)
+                Text(insight.message)
                     .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(MonytixTheme.text2)
-                    .lineLimit(2)
+                    .lineLimit(4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(MonytixSpace.sm)

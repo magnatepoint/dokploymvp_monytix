@@ -174,7 +174,7 @@ fun BudgetPilotScreen(
             } else if (isZeroState) {
                 ZeroStateCard(
                     modifier = modifier.padding(innerPadding),
-                    onAddTransaction = { onNavigateTo(AppDestinations.DATA) }
+                    onAddTransaction = { onNavigateTo(AppDestinations.MEMORY) }
                 )
             } else {
                 DataStateContent(

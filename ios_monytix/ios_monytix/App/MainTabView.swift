@@ -2,38 +2,38 @@
 //  MainTabView.swift
 //  ios_monytix
 //
-//  Bottom tab navigation: Home (MolyConsole) and SpendSense.
+//  Bottom tab navigation: Home, Memory, State, Foresight, Guidance, Profile (6 pillars).
 //
 
 import SwiftUI
 
 enum MainTab: Int, CaseIterable {
     case home = 0
-    case future = 1
-    case spendSense = 2
-    case goals = 3
-    case budget = 4
-    case moneyMoments = 5
+    case memory = 1
+    case state = 2
+    case foresight = 3
+    case guidance = 4
+    case profile = 5
 
     var title: String {
         switch self {
         case .home: return "Home"
-        case .future: return "Future"
-        case .spendSense: return "SpendSense"
-        case .goals: return "Goals"
-        case .budget: return "Budget"
-        case .moneyMoments: return "Moments"
+        case .memory: return "Memory"
+        case .state: return "State"
+        case .foresight: return "Foresight"
+        case .guidance: return "Guidance"
+        case .profile: return "Profile"
         }
     }
 
     var icon: String {
         switch self {
         case .home: return "house.fill"
-        case .future: return "chart.line.uptrend.xyaxis"
-        case .spendSense: return "indianrupeesign.circle.fill"
-        case .goals: return "target"
-        case .budget: return "chart.pie.fill"
-        case .moneyMoments: return "sparkles"
+        case .memory: return "clock.arrow.circlepath"
+        case .state: return "chart.pie.fill"
+        case .foresight: return "eye.fill"
+        case .guidance: return "lightbulb.fill"
+        case .profile: return "person.crop.circle.fill"
         }
     }
 }
@@ -45,9 +45,9 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             MolyConsoleView(
-                onNavigateToFuture: { selectedTab = .future },
-                onNavigateToGoals: { selectedTab = .goals },
-                onNavigateToSpendSense: { selectedTab = .spendSense },
+                onNavigateToFuture: { selectedTab = .foresight },
+                onNavigateToGoals: { selectedTab = .state },
+                onNavigateToSpendSense: { selectedTab = .memory },
                 requestUploadOnHome: $requestUploadOnHome
             )
                 .tabItem {
@@ -55,46 +55,43 @@ struct MainTabView: View {
                 }
                 .tag(MainTab.home)
 
-            FutureView(onUploadStatement: {
+            SpendSenseView()
+                .tabItem {
+                    Label(MainTab.memory.title, systemImage: MainTab.memory.icon)
+                }
+                .tag(MainTab.memory)
+
+            StateView(onNavigateToMemory: { selectedTab = .memory })
+                .tabItem {
+                    Label(MainTab.state.title, systemImage: MainTab.state.icon)
+                }
+                .tag(MainTab.state)
+
+            ForesightView(onUploadStatementFromFuture: {
                 selectedTab = .home
                 requestUploadOnHome = true
             })
                 .tabItem {
-                    Label(MainTab.future.title, systemImage: MainTab.future.icon)
+                    Label(MainTab.foresight.title, systemImage: MainTab.foresight.icon)
                 }
-                .tag(MainTab.future)
+                .tag(MainTab.foresight)
 
-            SpendSenseView()
+            GuidanceView()
                 .tabItem {
-                    Label(MainTab.spendSense.title, systemImage: MainTab.spendSense.icon)
+                    Label(MainTab.guidance.title, systemImage: MainTab.guidance.icon)
                 }
-                .tag(MainTab.spendSense)
+                .tag(MainTab.guidance)
 
-            GoalTrackerView()
+            ProfileView()
                 .tabItem {
-                    Label(MainTab.goals.title, systemImage: MainTab.goals.icon)
+                    Label(MainTab.profile.title, systemImage: MainTab.profile.icon)
                 }
-                .tag(MainTab.goals)
-
-            BudgetPilotView(onOpenSpendSense: {
-                selectedTab = .spendSense
-            })
-                .tabItem {
-                    Label(MainTab.budget.title, systemImage: MainTab.budget.icon)
-                }
-                .tag(MainTab.budget)
-
-            MoneyMomentsView()
-                .tabItem {
-                    Label(MainTab.moneyMoments.title, systemImage: MainTab.moneyMoments.icon)
-                }
-                .tag(MainTab.moneyMoments)
+                .tag(MainTab.profile)
         }
         .tint(MonytixTheme.cyan1)
         .onAppear {
             let appearance = UITabBarAppearance()
             appearance.configureWithOpaqueBackground()
-            // Surface #0D1220
             appearance.backgroundColor = UIColor(red: 13/255, green: 18/255, blue: 32/255, alpha: 1)
             UITabBar.appearance().standardAppearance = appearance
             UITabBar.appearance().scrollEdgeAppearance = appearance

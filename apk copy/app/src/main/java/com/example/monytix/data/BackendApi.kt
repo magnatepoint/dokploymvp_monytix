@@ -250,7 +250,8 @@ object BackendApi {
     }
 
     suspend fun getTopInsights(accessToken: String, limit: Int = 5): Result<TopInsightsResponse> = withContext(Dispatchers.IO) {
-        runWithFallback("$baseUrl/v1/spendsense/insights/top?limit=$limit", "$backupBaseUrl/v1/spendsense/insights/top?limit=$limit") { url ->
+        val safeLimit = limit.coerceIn(1, 50)
+        runWithFallback("$baseUrl/v1/spendsense/insights/top?limit=$safeLimit", "$backupBaseUrl/v1/spendsense/insights/top?limit=$safeLimit") { url ->
             client.get(url) { header("Authorization", "Bearer $accessToken") }.body<TopInsightsResponse>()
         }
     }

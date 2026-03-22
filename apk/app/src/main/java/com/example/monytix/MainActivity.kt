@@ -30,9 +30,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.AttachMoney
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.AlertDialog
@@ -82,12 +81,12 @@ import com.example.monytix.preauth.PreAuthViewModel
 import com.example.monytix.preauth.PreAuthViewModelFactory
 import com.example.monytix.R
 import com.example.monytix.auth.FirebaseAuthManager
-import com.example.monytix.budgetpilot.BudgetPilotScreen
-import com.example.monytix.goaltracker.GoalTrackerScreen
-import com.example.monytix.moneymoments.MoneyMomentsScreen
+import com.example.monytix.foresight.ForesightScreen
+import com.example.monytix.guidance.GuidanceScreen
 import com.example.monytix.home.HomeScreen
 import com.example.monytix.profile.ProfileScreen
-import com.example.monytix.future.FutureScreen
+import com.example.monytix.spendsense.SpendSenseScreen
+import com.example.monytix.state.StateScreen
 import com.example.monytix.spendsense.PendingManualAddHolder
 import com.example.monytix.spendsense.PendingUploadHolder
 import com.example.monytix.spendsense.UploadProcessingState
@@ -178,20 +177,20 @@ fun MonytixApp(
 
 private const val TOUR_STEP_UPLOAD = 0
 private const val TOUR_STEP_HOME = 1
-private const val TOUR_STEP_SPEND = 2
-private const val TOUR_STEP_GOALS = 3
-private const val TOUR_STEP_BUDGET = 4
-private const val TOUR_STEP_MOMENTS = 5
+private const val TOUR_STEP_MEMORY = 2
+private const val TOUR_STEP_STATE = 3
+private const val TOUR_STEP_FORESIGHT = 4
+private const val TOUR_STEP_GUIDANCE = 5
 private const val TOUR_STEP_PROFILE = 6
 private const val TOUR_STEP_DONE = 7
 private const val TOUR_STEP_COUNT = 8
 
 private fun tourStepToDestination(step: Int): AppDestinations = when (step) {
-    TOUR_STEP_UPLOAD, TOUR_STEP_SPEND -> AppDestinations.DATA
+    TOUR_STEP_UPLOAD, TOUR_STEP_MEMORY -> AppDestinations.MEMORY
     TOUR_STEP_HOME -> AppDestinations.HOME
-    TOUR_STEP_GOALS -> AppDestinations.GOALS
-    TOUR_STEP_BUDGET -> AppDestinations.BUDGET
-    TOUR_STEP_MOMENTS -> AppDestinations.FAVORITES
+    TOUR_STEP_STATE -> AppDestinations.STATE
+    TOUR_STEP_FORESIGHT -> AppDestinations.FORESIGHT
+    TOUR_STEP_GUIDANCE -> AppDestinations.GUIDANCE
     TOUR_STEP_PROFILE -> AppDestinations.PROFILE
     else -> AppDestinations.HOME
 }
@@ -258,8 +257,8 @@ internal fun MainContent(
 
     LaunchedEffect(pendingUpload) {
         if (pendingUpload != null && !tourActive) {
-            Log.d("MonytixUpload", "Pending upload set, switching to DATA tab")
-            currentDestination = AppDestinations.DATA
+            Log.d("MonytixUpload", "Pending upload set, switching to Memory tab")
+            currentDestination = AppDestinations.MEMORY
         }
     }
 
@@ -269,11 +268,10 @@ internal fun MainContent(
                 AppDestinations.entries.forEach {
                     val fullName = when (it) {
                         AppDestinations.HOME -> "MolyConsole"
-                        AppDestinations.FUTURE -> "Financial Future"
-                        AppDestinations.DATA -> "SpendSense"
-                        AppDestinations.GOALS -> "GoalTracker"
-                        AppDestinations.BUDGET -> "BudgetPilot"
-                        AppDestinations.FAVORITES -> "MoneyMoments"
+                        AppDestinations.MEMORY -> "Memory"
+                        AppDestinations.STATE -> "State"
+                        AppDestinations.FORESIGHT -> "Foresight"
+                        AppDestinations.GUIDANCE -> "Guidance"
                         AppDestinations.PROFILE -> "Profile"
                     }
                     item(
@@ -310,28 +308,24 @@ internal fun MainContent(
                             onLaunchFilePicker = { (context as? MainActivity)?.launchFilePicker() },
                             onAddTransaction = {
                                 if (!tourActive) {
-                                    currentDestination = AppDestinations.DATA
+                                    currentDestination = AppDestinations.MEMORY
                                     PendingManualAddHolder.state.value = true
                                 }
                             }
                         )
-                        AppDestinations.FUTURE -> FutureScreen(
-                            modifier = Modifier.padding(innerPadding),
-                            onUploadStatement = { (context as? MainActivity)?.launchFilePicker() }
-                        )
-                        AppDestinations.DATA -> SpendSenseScreen(
+                        AppDestinations.MEMORY -> SpendSenseScreen(
                             modifier = Modifier.padding(innerPadding),
                             onLaunchFilePicker = { (context as? MainActivity)?.launchFilePicker() }
                         )
-                        AppDestinations.GOALS -> GoalTrackerScreen(
+                        AppDestinations.STATE -> StateScreen(
                             modifier = Modifier.padding(innerPadding),
                             onNavigateTo = { if (!tourActive) currentDestination = it }
                         )
-                        AppDestinations.BUDGET -> BudgetPilotScreen(
+                        AppDestinations.FORESIGHT -> ForesightScreen(
                             modifier = Modifier.padding(innerPadding),
-                            onNavigateTo = { if (!tourActive) currentDestination = it }
+                            onUploadStatement = { (context as? MainActivity)?.launchFilePicker() }
                         )
-                        AppDestinations.FAVORITES -> MoneyMomentsScreen(modifier = Modifier.padding(innerPadding))
+                        AppDestinations.GUIDANCE -> GuidanceScreen(modifier = Modifier.padding(innerPadding))
                         AppDestinations.PROFILE -> ProfileScreen(modifier = Modifier.padding(innerPadding))
                     }
                 }
@@ -383,10 +377,10 @@ private fun GuidedTourOverlay(
                     text = when (step) {
                         TOUR_STEP_UPLOAD -> stringResource(R.string.guided_tour_step_upload_title)
                         TOUR_STEP_HOME -> stringResource(R.string.guided_tour_step_home_title)
-                        TOUR_STEP_SPEND -> stringResource(R.string.guided_tour_step_spend_title)
-                        TOUR_STEP_GOALS -> stringResource(R.string.guided_tour_step_goals_title)
-                        TOUR_STEP_BUDGET -> stringResource(R.string.guided_tour_step_budget_title)
-                        TOUR_STEP_MOMENTS -> stringResource(R.string.guided_tour_step_moments_title)
+                        TOUR_STEP_MEMORY -> stringResource(R.string.guided_tour_step_memory_title)
+                        TOUR_STEP_STATE -> stringResource(R.string.guided_tour_step_state_title)
+                        TOUR_STEP_FORESIGHT -> stringResource(R.string.guided_tour_step_foresight_title)
+                        TOUR_STEP_GUIDANCE -> stringResource(R.string.guided_tour_step_guidance_title)
                         TOUR_STEP_PROFILE -> stringResource(R.string.guided_tour_step_profile_title)
                         TOUR_STEP_DONE -> stringResource(R.string.guided_tour_step_done_title)
                         else -> ""
@@ -399,10 +393,10 @@ private fun GuidedTourOverlay(
                     text = when (step) {
                         TOUR_STEP_UPLOAD -> stringResource(R.string.guided_tour_step_upload_body)
                         TOUR_STEP_HOME -> stringResource(R.string.guided_tour_step_home_body)
-                        TOUR_STEP_SPEND -> stringResource(R.string.guided_tour_step_spend_body)
-                        TOUR_STEP_GOALS -> stringResource(R.string.guided_tour_step_goals_body)
-                        TOUR_STEP_BUDGET -> stringResource(R.string.guided_tour_step_budget_body)
-                        TOUR_STEP_MOMENTS -> stringResource(R.string.guided_tour_step_moments_body)
+                        TOUR_STEP_MEMORY -> stringResource(R.string.guided_tour_step_memory_body)
+                        TOUR_STEP_STATE -> stringResource(R.string.guided_tour_step_state_body)
+                        TOUR_STEP_FORESIGHT -> stringResource(R.string.guided_tour_step_foresight_body)
+                        TOUR_STEP_GUIDANCE -> stringResource(R.string.guided_tour_step_guidance_body)
                         TOUR_STEP_PROFILE -> stringResource(R.string.guided_tour_step_profile_body)
                         TOUR_STEP_DONE -> stringResource(R.string.guided_tour_step_done_body)
                         else -> ""
@@ -445,11 +439,10 @@ enum class AppDestinations(
     val icon: ImageVector,
 ) {
     HOME("Home", Icons.Default.Home),
-    FUTURE("Future", Icons.Default.ShowChart),
-    DATA("Spend", Icons.Default.AttachMoney),
-    GOALS("Goals", Icons.Default.Flag),
-    BUDGET("Budget", Icons.Default.PieChart),
-    FAVORITES("Moments", Icons.Default.Favorite),
+    MEMORY("Memory", Icons.Default.AttachMoney),
+    STATE("State", Icons.Default.PieChart),
+    FORESIGHT("Foresight", Icons.Default.ShowChart),
+    GUIDANCE("Guidance", Icons.Default.Lightbulb),
     PROFILE("Profile", Icons.Default.AccountBox),
 }
 

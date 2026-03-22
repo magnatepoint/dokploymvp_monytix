@@ -236,6 +236,9 @@
     <string name="empty_no_forecast_hint">We need a bit more history to project cash flow.</string>
     <string name="empty_no_forecast_action">Upload statement</string>
 
+    <string name="loading_command_center">Loading your command center…</string>
+    <string name="loading_forecast">Building your forecast…</string>
+
     <string name="empty_no_recommendations_title">You\'re on track</string>
     <string name="empty_no_recommendations_hint">When we have a recommendation, it\'ll show here.</string>
     <string name="empty_no_recommendations_action">See forecast</string>
@@ -316,6 +319,14 @@
     <string name="guided_tour_step_home_body">See net worth, today\'s intelligence, spending summary, and recent transactions in one place.</string>
     <string name="guided_tour_step_spend_title">SpendSense – Transactions &amp; insights</string>
     <string name="guided_tour_step_spend_body">View and categorize transactions, upload statements, add entries manually, and see spending insights.</string>
+    <string name="guided_tour_step_memory_title">Memory – Your spending data</string>
+    <string name="guided_tour_step_memory_body">View and categorize transactions, upload statements, and see spending insights.</string>
+    <string name="guided_tour_step_state_title">State – Budget &amp; goals</string>
+    <string name="guided_tour_step_state_body">Plan your budget and track savings goals in one place.</string>
+    <string name="guided_tour_step_foresight_title">Foresight – Nudges, habits &amp; future</string>
+    <string name="guided_tour_step_foresight_body">Habits, nudges, and your financial forecast.</string>
+    <string name="guided_tour_step_guidance_title">Guidance – AI tips</string>
+    <string name="guided_tour_step_guidance_body">Get personalized tips and chat with MONYTIX.</string>
     <string name="guided_tour_step_goals_title">GoalTracker</string>
     <string name="guided_tour_step_goals_body">Set savings goals and track your progress.</string>
     <string name="guided_tour_step_budget_title">BudgetPilot</string>

@@ -63,17 +63,40 @@ import com.example.monytix.ui.MonytixSpinner
 import com.example.monytix.ui.theme.AccentPrimary
 import com.example.monytix.ui.theme.GlassCard
 
+/** Public tab type for embedding in ForesightScreen. */
+enum class MoneyMomentsEmbedTab { NUDGES, HABITS }
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MoneyMomentsScreen(
     viewModel: MoneyMomentsViewModel = viewModel(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    embedTab: MoneyMomentsEmbedTab? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(MmTab.NUDGES) }
 
     LaunchedEffect(Unit) { AnalyticsHelper.logScreenView("money_moments") }
     val colorScheme = MaterialTheme.colorScheme
+
+    if (embedTab != null) {
+        val mmTab = when (embedTab) {
+            MoneyMomentsEmbedTab.NUDGES -> MmTab.NUDGES
+            MoneyMomentsEmbedTab.HABITS -> MmTab.HABITS
+        }
+        PullToRefreshBox(
+            modifier = modifier.fillMaxSize(),
+            isRefreshing = uiState.isMomentsLoading || uiState.isNudgesLoading,
+            onRefresh = { viewModel.loadData() }
+        ) {
+            when (mmTab) {
+                MmTab.NUDGES -> NudgesTab(viewModel = viewModel)
+                MmTab.HABITS -> HabitsTab(viewModel = viewModel)
+                MmTab.AI_INSIGHTS -> AIInsightsTab(viewModel = viewModel)
+            }
+        }
+        return
+    }
 
     Scaffold(
         topBar = {

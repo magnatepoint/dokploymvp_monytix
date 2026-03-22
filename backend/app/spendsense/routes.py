@@ -163,7 +163,7 @@ async def get_insights(
 
 @router.get("/insights/top", response_model=TopInsightsResponse, summary="Get top insights for command center")
 async def get_top_insights(
-    limit: int = Query(5, ge=1, le=10, description="Max number of insights to return"),
+    limit: int = Query(5, ge=1, le=50, description="Max number of insights to return"),
     user: AuthenticatedUser = Depends(get_current_user),
     service: SpendSenseService = Depends(get_service),
 ) -> TopInsightsResponse:

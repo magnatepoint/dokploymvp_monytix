@@ -47,11 +47,38 @@ struct HealthState {
     let score: Int
     let trend: String
     let subtext: String
+    /// e.g. "Moderate risk", "Low risk"
+    let riskLevel: String?
+    /// AI-style explanation: cause and impact
+    let explanation: String?
+    /// Actionable suggestion, e.g. "Reducing discretionary spending by ₹3,200/month could improve your score to 58."
+    let suggestedImprovement: String?
 }
 
 struct RiskState {
     let label: String
     let reason: String
+    /// For cash flow risk: shortfall amount this month (positive number)
+    let shortfallAmount: Double?
+    /// Days until projected shortfall
+    let daysUntilShortfall: Int?
+    /// CTA label, e.g. "View forecast →"
+    let ctaLabel: String?
+}
+
+/// Teaser for Financial Forecast strip
+struct ForecastTeaser {
+    let title: String
+    let message: String
+    let ctaLabel: String
+}
+
+/// Plan view for primary goal
+struct GoalPlan {
+    let goalName: String
+    let remaining: Double
+    let delayedByMonths: Int?
+    let recommendedMonthly: Double?
 }
 
 struct NextAction {
@@ -222,6 +249,10 @@ final class MolyConsoleViewModel: ObservableObject {
     /// Call when MolyConsole disappears: disconnect WebSocket.
     func disconnectRealtime() {
         WebSocketService.shared.disconnect()
+    }
+
+    func clearBackendError() {
+        backendError = nil
     }
 
     // MARK: - Transforms (mirror APK)
@@ -395,10 +426,17 @@ final class MolyConsoleViewModel: ObservableObject {
             }
         }
 
-        let foodCat = breakdown.first { ($0.categoryName ?? "").lowercased().contains("food") || ($0.categoryName ?? "").lowercased().contains("dining") }
+        let foodCat = breakdown.first { ($0.categoryName ?? "").lowercased().contains("food") || ($0.categoryName ?? "").lowercased().contains("dining") || ($0.categoryName ?? "").lowercased().contains("nightlife") }
         if let food = foodCat, food.percentage > 25 {
-            let save = Int(food.amount * 0.15)
-            list.append(AiInsight(id: "3", title: "Budget Tip", message: "You're spending \(Int(food.percentage))% on \(food.categoryName ?? "food"). Meal planning could save ₹\(save).", type: "budget_tip", confidence: 0.8))
+            let saveMonthly = Int(food.amount * 0.2)
+            let saveYearly = saveMonthly * 12
+            list.append(AiInsight(
+                id: "3",
+                title: "Dining Spending Pattern",
+                message: "\(Int(food.percentage))% of discretionary spending is on Food & Nightlife. If reduced by 20% you could save: ₹\(saveMonthly)/month · ₹\(saveYearly)/year",
+                type: "savings_opportunity",
+                confidence: 0.8
+            ))
         }
 
         if (k?.assetsAmount ?? 0) > 1_000_000 {
@@ -413,7 +451,7 @@ final class MolyConsoleViewModel: ObservableObject {
 
     func healthState() -> HealthState {
         if hasNoTransactionData() {
-            return HealthState(score: 0, trend: "neutral", subtext: "Add data to see your score")
+            return HealthState(score: 0, trend: "neutral", subtext: "Add data to see your score", riskLevel: nil, explanation: nil, suggestedImprovement: nil)
         }
         let income = kpis?.incomeAmount ?? 0
         let expenses = kpis?.totalDebitsAmount ?? 0
@@ -430,21 +468,109 @@ final class MolyConsoleViewModel: ObservableObject {
         if surplus > 0 && atRisk == 0 { trend = "up" }
         else if surplus < 0 || atRisk > 0 { trend = "down" }
         else { trend = "neutral" }
-        return HealthState(score: score, trend: trend, subtext: "Based on cash, goals, and spending")
+
+        let riskLevel: String? = score < 40 ? "High risk" : (score < 60 ? "Moderate risk" : (score < 80 ? "Low risk" : "On track"))
+        let explanation: String?
+        let suggestedImprovement: String?
+        if surplus < 0 && income > 0 {
+            let shortfall = abs(surplus)
+            explanation = "Your spending currently exceeds income."
+            let reduceBy = Int(shortfall * 0.6)
+            let potentialScore = min(100, score + 15)
+            suggestedImprovement = "Reducing discretionary spending by ₹\(reduceBy)/month could improve your score to \(potentialScore)."
+        } else if atRisk > 0 {
+            explanation = "Some goals are behind target."
+            suggestedImprovement = "Adding a small amount to your top goal can improve your score."
+        } else {
+            explanation = nil
+            suggestedImprovement = nil
+        }
+
+        return HealthState(
+            score: score,
+            trend: trend,
+            subtext: "Based on cash, goals, and spending",
+            riskLevel: riskLevel,
+            explanation: explanation,
+            suggestedImprovement: suggestedImprovement
+        )
     }
 
     func riskState() -> RiskState {
         if hasNoTransactionData() {
-            return RiskState(label: "Add your data", reason: "Upload a statement to see risk and opportunities.")
+            return RiskState(label: "Add your data", reason: "Upload a statement to see risk and opportunities.", shortfallAmount: nil, daysUntilShortfall: nil, ctaLabel: nil)
         }
         if !isCashFlowPositive() {
-            return RiskState(label: "Spending ahead of income", reason: "This month's outgo exceeds income. Review expenses.")
+            let income = kpis?.incomeAmount ?? 0
+            let expenses = kpis?.totalDebitsAmount ?? 0
+            let shortfall = expenses - income
+            let daysInMonth = Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30
+            let dailyDeficit = shortfall / Double(daysInMonth)
+            let balance = totalNetWorth()
+            let daysUntil = dailyDeficit > 0 && balance > 0 ? max(1, Int(ceil(balance / dailyDeficit))) : nil
+            return RiskState(
+                label: "Cash Flow Risk",
+                reason: "Spending exceeds income by \(formatCurrency(shortfall)) this month.\(daysUntil != nil && daysUntil! > 0 && daysUntil! <= 90 ? " Projected shortfall in \(daysUntil!) days." : " Review expenses.")",
+                shortfallAmount: shortfall,
+                daysUntilShortfall: daysUntil,
+                ctaLabel: "View forecast →"
+            )
         }
         let atRisk = goalsAtRiskCount()
         if atRisk > 0 {
-            return RiskState(label: "\(atRisk) goal\(atRisk > 1 ? "s" : "") at risk", reason: "Consider topping up to stay on track.")
+            return RiskState(
+                label: "\(atRisk) goal\(atRisk > 1 ? "s" : "") at risk",
+                reason: "Consider topping up to stay on track.",
+                shortfallAmount: nil,
+                daysUntilShortfall: nil,
+                ctaLabel: "View goals →"
+            )
         }
-        return RiskState(label: "You're on track", reason: "Cash flow is positive and goals are in good shape.")
+        return RiskState(label: "You're on track", reason: "Cash flow is positive and goals are in good shape.", shortfallAmount: nil, daysUntilShortfall: nil, ctaLabel: nil)
+    }
+
+    func forecastTeaser() -> ForecastTeaser {
+        if hasNoTransactionData() {
+            return ForecastTeaser(title: "Financial Forecast", message: "Upload data to see your projected balance.", ctaLabel: "View financial future →")
+        }
+        let balance = totalNetWorth()
+        let income = kpis?.incomeAmount ?? 0
+        let expenses = kpis?.totalDebitsAmount ?? 0
+        let surplus = income - expenses
+        let daysInMonth = Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30
+        let dailyDeficit = surplus < 0 ? (abs(surplus) / Double(daysInMonth)) : 0
+        if surplus < 0, dailyDeficit > 0, balance > 10_000 {
+            let threshold = 10_000.0
+            let daysUntilLow = max(1, Int(ceil((balance - threshold) / dailyDeficit)))
+            return ForecastTeaser(
+                title: "Financial Forecast",
+                message: "Your balance may drop below \(formatCurrency(threshold)) in \(daysUntilLow) days.",
+                ctaLabel: "View financial future →"
+            )
+        }
+        return ForecastTeaser(
+            title: "Financial Forecast",
+            message: "See how your balance and cash flow look over the next 30 days.",
+            ctaLabel: "View financial future →"
+        )
+    }
+
+    func primaryGoalPlan() -> GoalPlan? {
+        let goals = transformGoals()
+        guard let g = goals.first, g.targetAmount > 0 else { return nil }
+        let remaining = max(0, g.targetAmount - g.savedAmount)
+        let progressItem = goalsProgress.first(where: { $0.goalId == g.id })
+        let monthlyRequired = progressItem?.monthlyRequired ?? (remaining / 12)
+        let currentMonthly = progressItem?.monthlyAvgContribution ?? 0
+        let delayedBy: Int? = (currentMonthly > 0 && monthlyRequired > currentMonthly && monthlyRequired > 0)
+            ? max(0, Int(ceil((remaining / currentMonthly) - (remaining / monthlyRequired)))
+            : nil
+        return GoalPlan(
+            goalName: g.name,
+            remaining: remaining,
+            delayedByMonths: delayedBy,
+            recommendedMonthly: monthlyRequired > 0 ? monthlyRequired : nil
+        )
     }
 
     func nextAction() -> NextAction {
@@ -457,9 +583,17 @@ final class MolyConsoleViewModel: ObservableObject {
         }
         let goals = transformGoals()
         if goals.contains(where: { g in g.targetAmount > 0 && (g.savedAmount / g.targetAmount) < 0.5 }) {
-            return NextAction(type: "goal", label: "Top up a goal", payload: nil)
+            return NextAction(type: "goal", label: "Boost your goal progress", payload: nil)
         }
-        return NextAction(type: "forecast", label: "See your financial future", payload: nil)
+        return NextAction(type: "forecast", label: "View financial future", payload: nil)
+    }
+
+    private func formatCurrency(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        let formatted = formatter.string(from: NSNumber(value: abs(value))) ?? "\(Int(abs(value)))"
+        return value < 0 ? "-₹\(formatted)" : "₹\(formatted)"
     }
 }
 
